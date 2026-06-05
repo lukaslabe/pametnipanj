@@ -1071,6 +1071,125 @@ h2 {
   background: var(--honey);
 }
 
+.legal-shortcut,
+.legal-status,
+.validation-card,
+.apiary-card {
+  margin-bottom: 12px;
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.legal-shortcut {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  border-left: 5px solid #1e40af;
+  background: #eff6ff;
+  color: var(--ink);
+  text-align: left;
+}
+
+.legal-shortcut strong,
+.legal-status strong {
+  font-size: 1rem;
+}
+
+.legal-shortcut span,
+.legal-status span,
+.apiary-card h3 {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.legal-reminder {
+  border-left: 5px solid #1e40af;
+  background: #eff6ff;
+}
+
+.legal-reminder svg {
+  color: #1e40af;
+}
+
+.legal-reminder small {
+  display: block;
+  margin-top: 6px;
+  color: #1e3a8a;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.legal-badge {
+  display: inline-flex;
+  margin-left: 6px;
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1e40af;
+  font-size: 0.66rem;
+  font-weight: 1000;
+  letter-spacing: 0;
+  vertical-align: middle;
+}
+
+.legal-status {
+  display: grid;
+  gap: 5px;
+  border-left: 5px solid var(--green);
+}
+
+.legal-status-warn {
+  border-left-color: var(--orange);
+  background: var(--orange-soft);
+}
+
+.legal-status-danger {
+  border-left-color: var(--red);
+  background: var(--red-soft);
+}
+
+.apiary-card {
+  display: grid;
+  gap: 10px;
+  background: #fffdf8;
+}
+
+.apiary-card h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.counter-row {
+  display: grid;
+  grid-template-columns: 1fr 46px 76px 46px;
+  gap: 8px;
+  align-items: center;
+}
+
+.counter-row span {
+  color: var(--muted);
+  font-weight: 900;
+}
+
+.counter-row button {
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 1.2rem;
+  font-weight: 1000;
+}
+
+.counter-row input {
+  min-height: 44px;
+  padding: 8px;
+  text-align: center;
+}
+
 .ai-thinking {
   display: inline-flex;
   align-items: center;

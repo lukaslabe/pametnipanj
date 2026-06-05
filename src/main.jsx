@@ -333,6 +333,80 @@ function makeId(prefix) {
  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`.toUpperCase();
 }
 
+function legalRemindersForYear(year = new Date().getFullYear()) {
+ return [
+  {
+   id: `LEGAL-${year}-APR10`,
+   title: "⚖️ Pripravi popis čebeljih družin",
+   hiveId: "",
+   date: `10. apr ${year}`,
+   time: "dopoldne",
+   category: "zakonsko",
+   priority: "warn",
+   note: "Popisni datum je 15. april. Preštej vse družine vključno z rezervnimi.",
+   legal: true,
+  },
+  {
+   id: `LEGAL-${year}-APR15`,
+   title: "⚖️ POPIS: Stanje čebeljih družin",
+   hiveId: "",
+   date: `15. apr ${year}`,
+   time: "ves dan",
+   category: "zakonsko",
+   priority: "danger",
+   note: "Zakonski popisni datum. Zabeleži točno število družin v vsakem čebelnjaku danes.",
+   legal: true,
+  },
+  {
+   id: `LEGAL-${year}-OCT31`,
+   title: "⚖️ POPIS: Stanje čebeljih družin",
+   hiveId: "",
+   date: `31. okt ${year}`,
+   time: "ves dan",
+   category: "zakonsko",
+   priority: "danger",
+   note: "Zakonski popisni datum. Zabeleži točno število družin v vsakem čebelnjaku danes.",
+   legal: true,
+  },
+  {
+   id: `LEGAL-${year}-NOV25`,
+   title: "⚖️ Rok za poročanje se izteka",
+   hiveId: "",
+   date: `25. nov ${year}`,
+   time: "dopoldne",
+   category: "zakonsko",
+   priority: "danger",
+   note: "Rok za oddajo je 1. december za oba popisna datuma (15.4. in 31.10.). Oddaj poročilo na UVHVVR.",
+   legal: true,
+  },
+ ];
+}
+
+function getLegalReminders() {
+ const year = new Date().getFullYear();
+ return [...legalRemindersForYear(year), ...legalRemindersForYear(year + 1)];
+}
+
+function isNearCensusWindow(date = new Date()) {
+ const year = date.getFullYear();
+ const dayMs = 24 * 60 * 60 * 1000;
+ const targets = [new Date(year, 3, 15), new Date(year, 9, 31), new Date(year, 11, 1)];
+ return targets.some((target) => Math.abs(target.getTime() - date.getTime()) / dayMs <= 14);
+}
+
+function nextCensusStatus(date = new Date()) {
+ const year = date.getFullYear();
+ const april = new Date(year, 3, 15);
+ const october = new Date(year, 9, 31);
+ const deadline = new Date(year, 11, 1);
+ const sameDay = (left, right) => left.toDateString() === right.toDateString();
+ const daysUntil = (target) => Math.ceil((target.getTime() - date.getTime()) / (24 * 60 * 60 * 1000));
+ if (sameDay(date, april) || sameDay(date, october)) return { title: "🔴 DANES je popisni datum!", detail: "Zabeleži stanje čebeljih družin v vsakem čebelnjaku danes.", tone: "danger" };
+ if (date < april) return { title: `Naslednji popis: 15. april ${year}`, detail: `Še ${daysUntil(april)} dni`, tone: "ok" };
+ if (date < october) return { title: `Naslednji popis: 31. oktober ${year}`, detail: `Še ${daysUntil(october)} dni`, tone: "ok" };
+ return { title: `Rok za oddajo: 1. december ${year}`, detail: date <= deadline ? `Še ${Math.max(0, daysUntil(deadline))} dni za oddajo` : "Rok za letošnje poročanje je mimo.", tone: date <= deadline ? "warn" : "danger" };
+}
+
 function todayLabel() {
  return new Intl.DateTimeFormat("sl-SI", { day: "numeric", month: "short" }).format(new Date());
 }
@@ -420,6 +494,7 @@ function normalizeData(input = {}, persist = false) {
   jarFillingEvents: Array.isArray(data.jarFillingEvents) ? data.jarFillingEvents : [],
   financeEvents: Array.isArray(data.financeEvents) ? data.financeEvents : [],
   honeySales: Array.isArray(data.honeySales) ? data.honeySales : [],
+  censusReports: Array.isArray(data.censusReports) ? data.censusReports : [],
   healthRecords: Array.isArray(data.healthRecords) ? data.healthRecords : [],
   hivePhotos: Array.isArray(data.hivePhotos) ? data.hivePhotos : [],
   productEvents: Array.isArray(data.productEvents) ? data.productEvents : [],
@@ -1681,7 +1756,7 @@ function TimelineItem({ item }) {
  );
 }
 
-function CalendarPage({ data, saveParsedEvent, deleteCalendarEntry }) {
+function CalendarPage({ data, saveParsedEvent, deleteCalendarEntry, setPage }) {
  const [selectedDay, setSelectedDay] = useState(null);
  const [text, setText] = useState("");
  const [title, setTitle] = useState("");
@@ -1690,15 +1765,23 @@ function CalendarPage({ data, saveParsedEvent, deleteCalendarEntry }) {
  const [unit, setUnit] = useState("");
  const [suggestion, setSuggestion] = useState(null);
  const days = Array.from({ length: 30 }, (_, index) => index + 1);
- const eventDays = [...data.reminders, ...(data.events || [])].reduce((acc, reminder) => {
+ const allReminders = [...getLegalReminders(), ...data.reminders];
+ const eventDays = [...allReminders, ...(data.events || [])].reduce((acc, reminder) => {
   const day = Number.parseInt(reminder.date, 10);
   if (Number.isFinite(day)) acc[day] = reminder.category || actionTypeLabel(reminder.type);
   return acc;
  }, {});
+ const showReportingShortcut = isNearCensusWindow();
 
  return (
   <section>
    <PageHeader eyebrow="Opomniki" title="Junij 2026" subtitle="Velike oznake, brez drobnega branja." />
+   {showReportingShortcut ? (
+    <button className="legal-shortcut" type="button" onClick={() => setPage("porocanje")}>
+     <strong>⚖️ Zakonsko poročanje</strong>
+     <span>Popis čebeljih družin je blizu. Pripravi podatke za UVHVVR.</span>
+    </button>
+   ) : null}
    <PastureCalendarSection hives={data.hives} />
    <div className="calendar-grid">
     {days.map((day) => (
@@ -1710,7 +1793,7 @@ function CalendarPage({ data, saveParsedEvent, deleteCalendarEntry }) {
    </div>
    <h2 className="section-title">Prihaja</h2>
    <div className="stack">
-    {data.reminders.map((reminder) => <CalendarEntryRow key={reminder.id} item={reminder} hives={data.hives} kind="reminder" onDelete={deleteCalendarEntry} />)}
+    {allReminders.map((reminder) => <CalendarEntryRow key={reminder.id} item={reminder} hives={data.hives} kind="reminder" onDelete={deleteCalendarEntry} />)}
     {(data.events || []).filter((event) => event.source === "manual" && event.status !== "archived").slice(0, 6).map((event) => <CalendarEntryRow key={event.id} item={event} hives={data.hives} kind="event" onDelete={deleteCalendarEntry} />)}
    </div>
    {selectedDay ? (
@@ -1780,13 +1863,14 @@ function CalendarEntryRow({ item, hives, kind, onDelete }) {
   : getHiveName(hives, item.hiveId) + " · " + item.date + " · " + (structuredData.note || item.originalText || "");
 
  return (
-  <article className={"reminder reminder-" + (item.priority || "ok")}>
+  <article className={"reminder reminder-" + (item.priority || "ok") + (item.legal ? " legal-reminder" : "")}>
    <CalendarDays size={22} />
    <div>
-    <strong>{title}</strong>
+    <strong>{title} {item.legal ? <span className="legal-badge">ZAKONSKO</span> : null}</strong>
     <span>{subtitle}</span>
+    {item.note ? <small>{item.note}</small> : null}
    </div>
-   <button className="icon-button small-icon-button" type="button" onClick={() => onDelete(item.id, kind)} aria-label="Izbriši dogodek"><Trash2 size={18} /></button>
+   {!item.legal ? <button className="icon-button small-icon-button" type="button" onClick={() => onDelete(item.id, kind)} aria-label="Izbriši dogodek"><Trash2 size={18} /></button> : null}
   </article>
  );
 }
@@ -3516,6 +3600,275 @@ function SettingsPage({ data, setData }) {
  );
 }
 
+const BEEKEEPER_STORAGE_KEY = "pametnipanj-cebelar-data";
+
+function defaultBeekeeperData() {
+ return { name: "", taxId: "", kmgMid: "", address: "", email: "", phone: "" };
+}
+
+function readBeekeeperData() {
+ try {
+  return { ...defaultBeekeeperData(), ...JSON.parse(localStorage.getItem(BEEKEEPER_STORAGE_KEY) || "{}") };
+ } catch {
+  return defaultBeekeeperData();
+ }
+}
+
+function defaultApiary(index = 1) {
+ return { id: makeId("APIARY"), registrationNo: "", location: "", colonies: index === 1 ? 1 : 0, reserveColonies: 0 };
+}
+
+function importApiariesFromHives(hives = []) {
+ const active = hives.filter((hive) => hive.status !== "archived");
+ const groups = active.reduce((acc, hive) => {
+  const key = hive.locationName || hive.location || hive.locationDescription || "Čebelnjak";
+  if (!acc[key]) acc[key] = { id: makeId("APIARY"), registrationNo: "", location: key, colonies: 0, reserveColonies: 0 };
+  acc[key].colonies += 1;
+  return acc;
+ }, {});
+ return Object.values(groups).length ? Object.values(groups) : [defaultApiary()];
+}
+
+function formatCensusDate(value) {
+ const date = new Date(value);
+ return new Intl.DateTimeFormat("sl-SI", { day: "numeric", month: "long", year: "numeric" }).format(date);
+}
+
+function censusDateOptions(year = new Date().getFullYear()) {
+ return [
+  { id: "april", label: `15. april ${year}`, value: `${year}-04-15` },
+  { id: "october", label: `31. oktober ${year}`, value: `${year}-10-31` },
+ ];
+}
+
+function nearestCensusDate() {
+ const now = new Date();
+ const options = censusDateOptions(now.getFullYear());
+ const upcoming = options.find((option) => new Date(option.value) >= now);
+ return (upcoming || options[1]).value;
+}
+
+function validateCensus(beekeeper, apiaries) {
+ const checks = [
+  { ok: Boolean(beekeeper.name.trim()), text: `Ime in priimek: ${beekeeper.name || "manjka"}` },
+  { ok: /^\d{8}$/.test(beekeeper.taxId), text: `Davčna številka: ${beekeeper.taxId || "manjka"}` },
+  { ok: Boolean(beekeeper.kmgMid.trim()), text: `KMG-MID: ${beekeeper.kmgMid || "ni vpisana (neobvezno)"}`, optional: true },
+  ...apiaries.map((apiary, index) => ({
+   ok: Boolean(apiary.registrationNo.trim()) && toNumber(apiary.colonies) > 0,
+   text: `Čebelnjak ${index + 1}: ${apiary.registrationNo || "brez številke"} · ${toNumber(apiary.colonies)} družin`,
+  })),
+ ];
+ return checks;
+}
+
+function pdfHex(value) {
+ const bytes = [0xfe, 0xff];
+ for (const char of String(value || "")) {
+  const code = char.charCodeAt(0);
+  bytes.push((code >> 8) & 255, code & 255);
+ }
+ return bytes.map((byte) => byte.toString(16).padStart(2, "0")).join("").toUpperCase();
+}
+
+function escapePdfText(value) {
+ return `<${pdfHex(value)}>`;
+}
+
+function buildCensusPdf(report) {
+ const lines = [];
+ const add = (text, x = 42, yGap = 14, size = 10) => lines.push({ text, x, yGap, size });
+ add("REPUBLIKA SLOVENIJA", 190, 18, 10);
+ add("Ministrstvo za kmetijstvo, gozdarstvo in prehrano", 130, 12, 9);
+ add("Uprava za varno hrano, veterinarstvo in varstvo rastlin - SIRIS", 95, 22, 9);
+ add("OBRAZEC ZA SPOROČANJE ŠTEVILA ČEBELJIH DRUŽIN", 85, 28, 13);
+ add("v Register čebelnjakov", 215, 16, 10);
+ add(`Popisni datum: ${formatCensusDate(report.censusDate)}`, 42, 26, 11);
+ add("A. PODATKI O ČEBELARJU", 42, 24, 11);
+ add(`Ime in priimek: ${report.beekeeperData.name}`);
+ add(`Davčna številka: ${report.beekeeperData.taxId}`);
+ add(`KMG-MID: ${report.beekeeperData.kmgMid || "-"}`);
+ add(`Naslov: ${report.beekeeperData.address || "-"}`);
+ add(`Telefon: ${report.beekeeperData.phone || "-"}`);
+ add(`E-mail: ${report.beekeeperData.email || "-"}`);
+ add("B. PODATKI O ČEBELNJAKIH", 42, 26, 11);
+ add("Zap. št. | Številka čebelnjaka | Naslov/lokacija | Vse družine | Rezervne", 42, 16, 9);
+ report.apiaries.forEach((apiary, index) => {
+  add(`${index + 1}. | ${apiary.registrationNo} | ${apiary.location || "-"} | ${apiary.colonies} | ${apiary.reserveColonies || 0}`, 42, 14, 9);
+ });
+ add(`SKUPAJ: ${report.totalColonies} čebeljih družin v ${report.apiaries.length} čebelnjakih`, 42, 20, 10);
+ add("C. OPOMBE", 42, 24, 11);
+ add(report.notes || "____________________________________________________________", 42, 16, 9);
+ add("Izjavljam, da so zgornji podatki točni in resnični.", 42, 28, 10);
+ add("Datum: ____________________        Podpis: ____________________", 42, 24, 10);
+ add("Obrazec oddajte do 1. decembra na info.sir@gov.si, prek spletne aplikacije ali po pošti na UVHVVR - SIRIS, Dunajska cesta 22, 1000 Ljubljana.", 42, 28, 8);
+ add(`Ustvarjeno z aplikacijo PametniPanj · pametnipanj.si · ${new Date().toLocaleDateString("sl-SI")}`, 42, 14, 8);
+
+ let y = 780;
+ const content = [
+  "q 0.92 0.92 0.92 rg 42 748 36 36 re f Q",
+  `BT /F1 12 Tf 52 765 Td ${escapePdfText("RS")} Tj ET`,
+  "q 0.85 0.85 0.85 rg 0.96 0.96 0.96 RG 240 390 140 60 re B Q",
+  `BT /F1 38 Tf 255 420 Td ${escapePdfText("OSNUTEK")} Tj ET`,
+ ];
+ for (const line of lines) {
+  y -= line.yGap;
+  content.push(`BT /F1 ${line.size} Tf ${line.x} ${y} Td ${escapePdfText(line.text)} Tj ET`);
+ }
+ const stream = content.join("\n");
+ const objects = [
+  "<< /Type /Catalog /Pages 2 0 R >>",
+  "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+  "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+  "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+  `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
+ ];
+ let pdf = "%PDF-1.4\n";
+ const offsets = [0];
+ objects.forEach((object, index) => {
+  offsets.push(pdf.length);
+  pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+ });
+ const xref = pdf.length;
+ pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+ offsets.slice(1).forEach((offset) => { pdf += `${String(offset).padStart(10, "0")} 00000 n \n`; });
+ pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+ return new Blob([pdf], { type: "application/pdf" });
+}
+
+function downloadCensusPdf(report) {
+ const blob = buildCensusPdf(report);
+ const url = URL.createObjectURL(blob);
+ const safeName = (report.beekeeperData.name || "cebelar").replace(/[^a-z0-9čšžČŠŽ-]+/gi, "-");
+ const link = document.createElement("a");
+ link.href = url;
+ link.download = `Popis-cebeljih-druzin-${report.censusDate}-${safeName}.pdf`;
+ link.click();
+ URL.revokeObjectURL(url);
+}
+
+function PorocanjePage({ data, saveCensusReport }) {
+ const [beekeeper, setBeekeeper] = useState(() => readBeekeeperData());
+ const [saved, setSaved] = useState(false);
+ const [censusDate, setCensusDate] = useState(() => nearestCensusDate());
+ const [apiaries, setApiaries] = useState(() => importApiariesFromHives(data.hives));
+ const [notes, setNotes] = useState("");
+ const status = nextCensusStatus();
+ const totalColonies = apiaries.reduce((sum, apiary) => sum + toNumber(apiary.colonies), 0);
+ const checks = validateCensus(beekeeper, apiaries);
+ const canExport = checks.filter((check) => !check.optional).every((check) => check.ok);
+
+ function updateBeekeeper(field, value) {
+  const nextValue = field === "taxId" ? value.replace(/\D/g, "").slice(0, 8) : value;
+  setBeekeeper((current) => ({ ...current, [field]: nextValue }));
+ }
+
+ function saveBeekeeper() {
+  localStorage.setItem(BEEKEEPER_STORAGE_KEY, JSON.stringify(beekeeper));
+  setSaved(true);
+  setTimeout(() => setSaved(false), 2500);
+ }
+
+ function updateApiary(id, field, value) {
+  setApiaries((current) => current.map((apiary) => apiary.id === id ? { ...apiary, [field]: field.includes("Colonies") || field === "colonies" ? Math.max(0, Number(value) || 0) : value } : apiary));
+ }
+
+ function stepApiary(id, field, delta) {
+  setApiaries((current) => current.map((apiary) => apiary.id === id ? { ...apiary, [field]: Math.max(0, toNumber(apiary[field]) + delta) } : apiary));
+ }
+
+ function makeReport(pdfGenerated = false) {
+  return {
+   id: makeId("CR"),
+   date: new Date().toISOString(),
+   censusDate,
+   beekeeperData: beekeeper,
+   apiaries,
+   notes,
+   totalColonies,
+   submittedAt: new Date().toISOString(),
+   pdfGenerated,
+  };
+ }
+
+ function exportPdf() {
+  const report = makeReport(true);
+  saveCensusReport(report);
+  downloadCensusPdf(report);
+ }
+
+ function sendMail() {
+  const subject = encodeURIComponent(`Popis čebeljih družin - ${formatCensusDate(censusDate)}`);
+  const body = encodeURIComponent(`Pozdravljeni,\n\nv prilogi oziroma spodaj pošiljam podatke za popis čebeljih družin.\n\nČebelar: ${beekeeper.name}\nDavčna številka: ${beekeeper.taxId}\nPopisni datum: ${formatCensusDate(censusDate)}\nSkupaj: ${totalColonies} čebeljih družin\n\n${apiaries.map((apiary, index) => `${index + 1}. ${apiary.registrationNo} - ${apiary.location || "-"} - ${apiary.colonies} družin, rezervnih ${apiary.reserveColonies || 0}`).join("\n")}\n\nOpombe: ${notes || "-"}\n\nLep pozdrav`);
+  window.location.href = `mailto:info.sir@gov.si?subject=${subject}&body=${body}`;
+ }
+
+ return (
+  <section>
+   <PageHeader eyebrow="Zakonsko poročanje" title="Popis čebeljih družin" subtitle="Register čebelnjakov (UVHVVR)" />
+   <div className={`legal-status legal-status-${status.tone}`}><strong>{status.title}</strong><span>{status.detail}</span></div>
+   <div className="form-card">
+    <h2>Podatki čebelarja</h2>
+    <label>Ime in priimek *<input value={beekeeper.name} onChange={(event) => updateBeekeeper("name", event.target.value)} placeholder="npr. Janez Novak" /></label>
+    <div className="form-grid">
+     <label>Davčna številka *<input inputMode="numeric" value={beekeeper.taxId} onChange={(event) => updateBeekeeper("taxId", event.target.value)} placeholder="12345678" /></label>
+     <label>KMG-MID številka<input value={beekeeper.kmgMid} onChange={(event) => updateBeekeeper("kmgMid", event.target.value)} placeholder="neobvezno" /></label>
+    </div>
+    <label>Naslov čebelarja<input value={beekeeper.address} onChange={(event) => updateBeekeeper("address", event.target.value)} placeholder="npr. Glavna ulica 1, 1000 Ljubljana" /></label>
+    <div className="form-grid">
+     <label>Kontaktni e-mail<input value={beekeeper.email} onChange={(event) => updateBeekeeper("email", event.target.value)} placeholder="za potrditev oddaje" /></label>
+     <label>Telefon<input value={beekeeper.phone} onChange={(event) => updateBeekeeper("phone", event.target.value)} placeholder="neobvezno" /></label>
+    </div>
+    <button className="secondary-button" type="button" onClick={saveBeekeeper}>Shrani podatke čebelarja</button>
+    {saved ? <p className="success-text">✓ Podatki shranjeni</p> : null}
+   </div>
+   <div className="segmented-row">
+    {censusDateOptions().map((option) => <button key={option.value} className={censusDate === option.value ? "active" : ""} onClick={() => setCensusDate(option.value)}>{option.label}</button>)}
+   </div>
+   <div className="card">
+    <div className="card-title"><h2>Čebelnjaki in število družin</h2><button className="text-button" type="button" onClick={() => setApiaries(importApiariesFromHives(data.hives))}>🐝 Uvozi iz mojih panjev</button></div>
+    <div className="stack">
+     {apiaries.map((apiary, index) => (
+      <div className="apiary-card" key={apiary.id}>
+       <div className="card-title"><h3>Čebelnjak #{index + 1}</h3>{apiaries.length > 1 ? <button className="icon-button small-icon-button" onClick={() => setApiaries((current) => current.filter((item) => item.id !== apiary.id))}><Trash2 size={18} /></button> : null}</div>
+       <label>Številka čebelnjaka *<input value={apiary.registrationNo} onChange={(event) => updateApiary(apiary.id, "registrationNo", event.target.value)} placeholder="npr. SI-KR-0123" /></label>
+       <label>Naslov / lokacija čebelnjaka<input value={apiary.location} onChange={(event) => updateApiary(apiary.id, "location", event.target.value)} /></label>
+       <div className="counter-row"><span>Število čebeljih družin *</span><button onClick={() => stepApiary(apiary.id, "colonies", -1)}>-</button><input value={apiary.colonies} onChange={(event) => updateApiary(apiary.id, "colonies", event.target.value)} /><button onClick={() => stepApiary(apiary.id, "colonies", 1)}>+</button></div>
+       <div className="counter-row"><span>Od tega rezervnih</span><button onClick={() => stepApiary(apiary.id, "reserveColonies", -1)}>-</button><input value={apiary.reserveColonies} onChange={(event) => updateApiary(apiary.id, "reserveColonies", event.target.value)} /><button onClick={() => stepApiary(apiary.id, "reserveColonies", 1)}>+</button></div>
+      </div>
+     ))}
+    </div>
+    <button className="secondary-button full-button" type="button" onClick={() => setApiaries((current) => [...current, defaultApiary(current.length + 1)])}>+ Dodaj čebelnjak</button>
+    <p className="cost-text">Skupaj: {totalColonies} čebeljih družin v {apiaries.length} čebelnjakih</p>
+   </div>
+   <label>Opombe (neobvezno)<textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="npr. 2 rezervni družini pri Lipovcu, ena brez matice" /></label>
+   <div className="validation-card">
+    <h2>Preverjanje pred oddajo</h2>
+    {checks.map((check) => <p key={check.text} className={check.ok || check.optional ? "success-text" : "warning-text"}>{check.ok ? "✓" : check.optional ? "⚠" : "!"} {check.text}</p>)}
+   </div>
+   <div className="cloud-actions">
+    <button className="primary-button" type="button" disabled={!canExport} onClick={exportPdf}>📄 Izvozi PDF obrazec</button>
+    <button className="secondary-button" type="button" onClick={sendMail}>📧 Pošlji na info.sir@gov.si</button>
+    <button className="secondary-button" type="button" onClick={() => window.open("https://storitve-mkgp.gov.si/dad/sir_javno/w_apis_census.startup", "_blank", "noopener")}>🌐 Odpri Register čebelnjakov</button>
+   </div>
+   <div className="card">
+    <h2>Pretekla poročila</h2>
+    <div className="stack">
+     {(data.censusReports || []).length ? data.censusReports.map((report) => (
+      <article className="event-card" key={report.id}>
+       <ClipboardList size={22} />
+       <div>
+        <strong>{formatCensusDate(report.censusDate)} · {report.totalColonies} družin</strong>
+        <span>{report.apiaries.length} čebelnjakov · {new Date(report.date).toLocaleDateString("sl-SI")}</span>
+       </div>
+       <button className="secondary-button compact-button" type="button" onClick={() => downloadCensusPdf(report)}>Prenesi PDF</button>
+      </article>
+     )) : <p className="subtle">Arhiv je še prazen.</p>}
+    </div>
+   </div>
+  </section>
+ );
+}
+
 function MorePage({ setPage }) {
  const sections = [
   {
@@ -3538,6 +3891,7 @@ function MorePage({ setPage }) {
   {
    title: "FINANCE",
    items: [
+    ["porocanje", "Zakonsko poročanje", Scale, "Popis čebeljih družin · 15.4. in 31.10."],
     ["finance", "Bilanca", Scale, "Prihodki, stroški, dobiček"],
     ["inventory", "Zaloga", ClipboardList, "Sladkor, kozarci, oprema na regalu"],
     ["filling", "Polnjenje", ListPlus, "Kozarci, serije in ostanek medu"],
@@ -4341,10 +4695,17 @@ function App() {
   commitData((current) => ({ ...current, hivePhotos: (current.hivePhotos || []).filter((photo) => photo.id !== photoId) }));
  }
 
+ function saveCensusReport(report) {
+  commitData((current) => ({
+   ...current,
+   censusReports: [report, ...(current.censusReports || []).filter((item) => item.id !== report.id)],
+  }));
+ }
+
  const screens = {
   dashboard: <Dashboard data={data} openHive={openHive} goTo={setPage} />,
   hive: <HiveDetail data={data} hiveId={selectedHiveId} setPage={setPage} startEdit={startEdit} deleteHive={deleteHive} addNoteForHive={addNoteForHive} saveHealthRecord={saveHealthRecord} addHivePhoto={addHivePhoto} deleteHivePhoto={deleteHivePhoto} />,
-  calendar: <CalendarPage data={data} saveParsedEvent={saveParsedEvent} deleteCalendarEntry={deleteCalendarEntry} />,
+  calendar: <CalendarPage data={data} saveParsedEvent={saveParsedEvent} deleteCalendarEntry={deleteCalendarEntry} setPage={setPage} />,
     qr: <QRPage data={data} setData={commitData} openHive={openHive} openInventoryShelf={openInventoryShelf} startHiveWizard={startHiveWizard} />,
     ai: <AiAssistantPage data={data} openHive={openHive} setPage={setPage} />,
   voice: <VoicePage data={data} saveVoiceAction={saveVoiceAction} initialHiveId={selectedHiveId} />,
@@ -4361,6 +4722,7 @@ function App() {
   filling: <FillingPage data={data} addFillingEvent={addFillingEvent} />,
   honeyDiary: <HoneyDiaryPage data={data} addHoneySale={addHoneySale} />,
   finance: <FinancePage data={data} addFinanceEvent={addFinanceEvent} />,
+  porocanje: <PorocanjePage data={data} saveCensusReport={saveCensusReport} />,
   devices: <DevicesPage data={data} />,
   settings: <SettingsPage data={data} setData={setData} />,
   debug: <DebugPage data={data} />,
