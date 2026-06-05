@@ -231,6 +231,10 @@ const initialData = {
   { id: "R-003", hiveId: "BC-2026-001", title: "Dodaj medišče", date: "3. jun", time: "dopoldne", category: "delo", priority: "ok", createdAt: "2026-05-29T06:00:00.000Z" },
   { id: "R-004", hiveId: "BC-2026-003", title: "Točenje medu", date: "7. jun", time: "08:30", category: "točenje", priority: "ok", createdAt: "2026-05-28T06:00:00.000Z" },
   { id: "R-005", hiveId: "", title: "Novo označevanje medu z QR kodo", date: "14. jun 2026", time: "ves dan", category: "sledljivost", priority: "danger", note: "Od danes začni serije medu označevati z QR kodo. Pri točenju in polnjenju preveri, da ima vsaka serija svoj QR zapis.", createdAt: "2026-06-05T12:00:00.000Z" },
+  { id: "R-006", hiveId: "", title: "FFS: previdno pri cvetenju", date: "6. jun 2026", time: "zjutraj", category: "varstvo čebel", priority: "warn", note: "Kontaktna sredstva, nevarna za čebele, se smejo uporabljati le ponoči med cvetenjem; sistemična sredstva so med cvetenjem prepovedana. Preveri škropljenja v okolici.", createdAt: "2026-06-05T13:00:00.000Z" },
+  { id: "R-007", hiveId: "", title: "Pašni redi: objava stojišč", date: "30. jun 2026", time: "do konca dneva", category: "pašni redi", priority: "warn", note: "Društva morajo do konca junija objaviti razpoložljiva stojišča in podatke o številu stojišč.", createdAt: "2026-06-05T13:05:00.000Z" },
+  { id: "R-008", hiveId: "", title: "Rok: subvencioniranje vzreje matic", date: "3. jul 2026", time: "15:00", category: "razpis", priority: "danger", note: "Rok za oddajo vlog za subvencioniranje vzreje čebeljih matic v programskem letu 2026.", createdAt: "2026-06-05T13:10:00.000Z" },
+  { id: "R-009", hiveId: "", title: "Rok: čebelarske intervencije", date: "31. jul 2026", time: "15:00", category: "razpis", priority: "danger", note: "Zadnji rok za večino čebelarskih intervencij oziroma do porabe sredstev.", createdAt: "2026-06-05T13:15:00.000Z" },
  ],
  qrItems: [
   { id: "PametniPanj-panj1", type: "Panj", linkedHiveId: "BC-2026-001", linkedTo: "Lipovec", lastScan: "demo", status: "Aktivno", createdAt: "2026-05-20T08:00:00.000Z" },
@@ -1865,14 +1869,18 @@ function TimelineItem({ item }) {
 
 function CalendarPage({ data, saveParsedEvent, deleteCalendarEntry, setPage }) {
  const [selectedDay, setSelectedDay] = useState(null);
+ const [visibleMonth, setVisibleMonth] = useState(() => new Date(2026, 5, 1));
  const [text, setText] = useState("");
  const [title, setTitle] = useState("");
  const [hiveId, setHiveId] = useState(data.hives[0]?.id || "");
  const [amount, setAmount] = useState("");
  const [unit, setUnit] = useState("");
  const [suggestion, setSuggestion] = useState(null);
- const days = Array.from({ length: 30 }, (_, index) => index + 1);
- const monthYear = { year: 2026, month: 5 };
+ const monthYear = { year: visibleMonth.getFullYear(), month: visibleMonth.getMonth() };
+ const daysInMonth = new Date(monthYear.year, monthYear.month + 1, 0).getDate();
+ const firstWeekday = (new Date(monthYear.year, monthYear.month, 1).getDay() + 6) % 7;
+ const days = Array.from({ length: daysInMonth }, (_, index) => index + 1);
+ const blanks = Array.from({ length: firstWeekday }, (_, index) => index);
  const allReminders = [...getLegalReminders(), ...data.reminders].sort((a, b) => calendarSortValue(a) - calendarSortValue(b));
  const calendarItems = [
   ...allReminders.map((item) => ({ ...item, kind: "reminder" })),
@@ -1884,6 +1892,8 @@ function CalendarPage({ data, saveParsedEvent, deleteCalendarEntry, setPage }) {
  const selectedKey = selectedDate ? calendarKeyForDate(selectedDate) : "";
  const selectedItems = selectedKey ? calendarItems.filter((item) => calendarKeyForDate(item.parsedDate) === selectedKey) : [];
  const upcomingItems = calendarItems.filter((item) => item.parsedDate >= startOfDay(new Date())).slice(0, 8);
+ const todayKey = calendarKeyForDate(startOfDay(new Date()));
+ const monthTitle = new Intl.DateTimeFormat("sl-SI", { month: "long", year: "numeric" }).format(visibleMonth);
  const eventDays = calendarItems.reduce((acc, item) => {
   if (item.parsedDate.getFullYear() === monthYear.year && item.parsedDate.getMonth() === monthYear.month) {
    const day = item.parsedDate.getDate();
@@ -1894,9 +1904,14 @@ function CalendarPage({ data, saveParsedEvent, deleteCalendarEntry, setPage }) {
  }, {});
  const showReportingShortcut = isNearCensusWindow();
 
- return (
-  <section>
-   <PageHeader eyebrow="Koledar" title="Junij 2026" subtitle="Izberi dan, poglej dogodke in dodaj nov vnos." />
+  return (
+   <section>
+   <PageHeader eyebrow="Koledar" title={monthTitle.charAt(0).toUpperCase() + monthTitle.slice(1)} subtitle="Izberi dan, poglej dogodke in dodaj nov vnos." />
+   <div className="calendar-month-nav">
+    <button type="button" className="secondary-button compact-button" onClick={() => { setVisibleMonth((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1)); setSelectedDay(null); }}>Prejšnji mesec</button>
+    <button type="button" className="secondary-button compact-button" onClick={() => { setVisibleMonth(new Date(2026, 5, 1)); setSelectedDay(null); }}>Junij 2026</button>
+    <button type="button" className="secondary-button compact-button" onClick={() => { setVisibleMonth((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1)); setSelectedDay(null); }}>Naslednji mesec</button>
+   </div>
    {showReportingShortcut ? (
     <button className="legal-shortcut" type="button" onClick={() => setPage("porocanje")}>
      <strong>Zakonsko poročanje</strong>
@@ -1905,8 +1920,9 @@ function CalendarPage({ data, saveParsedEvent, deleteCalendarEntry, setPage }) {
    ) : null}
    <PastureCalendarSection hives={data.hives} />
    <div className="calendar-grid">
+    {blanks.map((blank) => <span className="day day-empty" key={`blank-${blank}`} />)}
     {days.map((day) => (
-     <button key={day} onClick={() => { setSelectedDay(day); setText(""); setTitle(""); setAmount(""); setUnit(""); setHiveId(data.hives[0]?.id || ""); setSuggestion(null); }} className={`day ${eventDays[day]?.length ? "has-event" : ""} ${day === 7 ? "today" : ""}`}>
+     <button key={day} onClick={() => { setSelectedDay(day); setText(""); setTitle(""); setAmount(""); setUnit(""); setHiveId(data.hives[0]?.id || ""); setSuggestion(null); }} className={`day ${eventDays[day]?.length ? "has-event" : ""} ${calendarKeyForDate(new Date(monthYear.year, monthYear.month, day)) === todayKey ? "today" : ""}`}>
       <strong>{day}</strong>
       <span>{eventDays[day]?.length ? `${eventDays[day].length} vnos` : ""}</span>
      </button>
@@ -1926,7 +1942,7 @@ function CalendarPage({ data, saveParsedEvent, deleteCalendarEntry, setPage }) {
        hiveId,
        amount: amount || suggestion?.amount || "",
        unit: unit || suggestion?.unit || "",
-       date: `${selectedDay}. jun 2026`,
+       date: new Intl.DateTimeFormat("sl-SI", { day: "numeric", month: "short", year: "numeric" }).format(selectedDate),
        transcript: text,
        note: text || title || "Koledarski vnos",
       };
@@ -1943,7 +1959,7 @@ function CalendarPage({ data, saveParsedEvent, deleteCalendarEntry, setPage }) {
        )) : <p className="empty">Ta dan še nima dogodkov.</p>}
       </div>
       <h3 className="compact-heading">Dodaj nov dogodek</h3>
-      <label>Datum<input value={`${selectedDay}. jun 2026`} readOnly /></label>
+      <label>Datum<input value={new Intl.DateTimeFormat("sl-SI", { day: "numeric", month: "short", year: "numeric" }).format(selectedDate)} readOnly /></label>
       <label>Naslov<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="npr. Pregled panja" /></label>
       <HiveSelect hives={data.hives} value={hiveId} onChange={setHiveId} />
       <label>Opis<textarea value={text} onChange={(event) => setText(event.target.value)} placeholder="npr. Pobral sem 1 kg cvetnega prahu iz panja Lipovec." /></label>
@@ -1952,7 +1968,7 @@ function CalendarPage({ data, saveParsedEvent, deleteCalendarEntry, setPage }) {
        <label>Enota<input value={unit} onChange={(event) => setUnit(event.target.value)} placeholder="kg / L" /></label>
       </div>
       <button className="secondary-button" type="button" onClick={() => {
-       const parsed = { ...extractVoiceAction(text, data.hives, hiveId), date: `${selectedDay}. jun 2026` };
+       const parsed = { ...extractVoiceAction(text, data.hives, hiveId), date: new Intl.DateTimeFormat("sl-SI", { day: "numeric", month: "short", year: "numeric" }).format(selectedDate) };
        setSuggestion(parsed);
        setHiveId(parsed.hiveId || hiveId);
        setAmount(parsed.amount || amount);
@@ -1970,7 +1986,7 @@ function CalendarPage({ data, saveParsedEvent, deleteCalendarEntry, setPage }) {
       <div className="cloud-actions">
        <button className="primary-button" type="submit">Da, shrani</button>
        <button className="secondary-button" type="button" onClick={() => {
-        saveParsedEvent({ type: "general_note", hiveId, title: title || "Opomba", transcript: text, note: text || title, date: `${selectedDay}. jun 2026`, fields: {} }, "manual");
+        saveParsedEvent({ type: "general_note", hiveId, title: title || "Opomba", transcript: text, note: text || title, date: new Intl.DateTimeFormat("sl-SI", { day: "numeric", month: "short", year: "numeric" }).format(selectedDate), fields: {} }, "manual");
         setSelectedDay(null);
        }}>Samo opomba</button>
       </div>
