@@ -230,6 +230,7 @@ const initialData = {
   { id: "R-002", hiveId: "BC-2026-002", title: "Pregled zaloge", date: "1. jun", time: "09:00", category: "pregled", priority: "warn", createdAt: "2026-05-30T06:00:00.000Z" },
   { id: "R-003", hiveId: "BC-2026-001", title: "Dodaj medišče", date: "3. jun", time: "dopoldne", category: "delo", priority: "ok", createdAt: "2026-05-29T06:00:00.000Z" },
   { id: "R-004", hiveId: "BC-2026-003", title: "Točenje medu", date: "7. jun", time: "08:30", category: "točenje", priority: "ok", createdAt: "2026-05-28T06:00:00.000Z" },
+  { id: "R-005", hiveId: "", title: "Novo označevanje medu z QR kodo", date: "14. jun 2026", time: "ves dan", category: "sledljivost", priority: "danger", note: "Od danes začni serije medu označevati z QR kodo. Pri točenju in polnjenju preveri, da ima vsaka serija svoj QR zapis.", createdAt: "2026-06-05T12:00:00.000Z" },
  ],
  qrItems: [
   { id: "PametniPanj-panj1", type: "Panj", linkedHiveId: "BC-2026-001", linkedTo: "Lipovec", lastScan: "demo", status: "Aktivno", createdAt: "2026-05-20T08:00:00.000Z" },
