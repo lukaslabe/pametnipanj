@@ -6,6 +6,7 @@ package/
 
 # Build output
 dist/
+dist-check*/
 .vite/
 
 # Local deployment and service state

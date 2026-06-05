@@ -57,6 +57,11 @@ const STORAGE_KEY = "pametnipanj-local-v1";
 const LEGACY_STORAGE_KEYS = ["beecare-mvp-local-v3-sl"];
 const MODE_KEY = "pametnipanj-mode";
 const SESSION_KEY = "pametnipanj-supabase-session";
+const USER_TYPE_KEY = "pp-user-type";
+const BEGINNER_PROGRESS_KEY = "pp-beginner-progress";
+const KMG_MID_KEY = "pp-kmg-mid";
+const APIARY_REG_KEY = "pp-apiary-registration";
+const LABEL_RULE_KEY = "pp-nalepke-2026";
 
 const initialData = {
  hives: [
@@ -235,6 +240,8 @@ const initialData = {
   { id: "R-007", hiveId: "", title: "Pašni redi: objava stojišč", date: "30. jun 2026", time: "do konca dneva", category: "pašni redi", priority: "warn", note: "Društva morajo do konca junija objaviti razpoložljiva stojišča in podatke o številu stojišč.", createdAt: "2026-06-05T13:05:00.000Z" },
   { id: "R-008", hiveId: "", title: "Rok: subvencioniranje vzreje matic", date: "3. jul 2026", time: "15:00", category: "razpis", priority: "danger", note: "Rok za oddajo vlog za subvencioniranje vzreje čebeljih matic v programskem letu 2026.", createdAt: "2026-06-05T13:10:00.000Z" },
   { id: "R-009", hiveId: "", title: "Rok: čebelarske intervencije", date: "31. jul 2026", time: "15:00", category: "razpis", priority: "danger", note: "Zadnji rok za večino čebelarskih intervencij oziroma do porabe sredstev.", createdAt: "2026-06-05T13:15:00.000Z" },
+  { id: "R-010", hiveId: "", title: "Poletno zdravljenje varoje", date: "20. jul 2026", time: "dopoldne", category: "zdravje", priority: "warn", note: "Po zadnjem točenju načrtuj poletno zatiranje varoje. Uporabi registrirane pripravke in upoštevaj navodila veterinarja.", createdAt: "2026-06-05T13:20:00.000Z" },
+  { id: "R-011", hiveId: "", title: "Jesensko zdravljenje varoje", date: "1. nov 2026", time: "dopoldne", category: "zdravje", priority: "warn", note: "Ob obdobju brez zalege preveri jesensko-zimsko zdravljenje varoje, pogosto z oksalno kislino ali drugim registriranim pripravkom.", createdAt: "2026-06-05T13:25:00.000Z" },
  ],
  qrItems: [
   { id: "PametniPanj-panj1", type: "Panj", linkedHiveId: "BC-2026-001", linkedTo: "Lipovec", lastScan: "demo", status: "Aktivno", createdAt: "2026-05-20T08:00:00.000Z" },
@@ -300,7 +307,7 @@ const nav = [
  { id: "dashboard", label: "Panji", icon: Home },
  { id: "calendar", label: "Koledar", icon: CalendarDays },
  { id: "qr", label: "QR", icon: QrCode },
- { id: "ai", label: "Čebela", icon: Bot },
+ { id: "ai", label: "Čebela", icon: BeeAIIcon },
  { id: "voice", label: "Glas", icon: Mic },
 ];
 
@@ -332,6 +339,71 @@ const localQA = [
  { keys: ["pik", "pičilo", "picilo", "alergi"], answer: "Po piku odstrani želo s strganjem in hladi mesto pika. Pri težkem dihanju ali močni reakciji takoj poišči pomoč." },
  { keys: ["pregled", "kdaj v panj", "kdaj preveriti"], answer: "Najboljši čas za pregled je topel, miren dan, približno med 10. in 16. uro. Pozimi panja ne odpiramo po nepotrebnem." },
  { keys: ["satnica", "satnice", "menjava"], answer: "Staro temno satje redno menjaj. S tem zmanjšaš ostanke bolezni in izboljšaš razvoj družine." },
+];
+
+const beginnerSteps = [
+ {
+  id: "club",
+  title: "Včlani se v čebelarsko društvo",
+  why: "Društvo ti pomaga z izobraževanjem, opremo, mentorjem in lokalnimi informacijami.",
+  how: ["Poišči najbližje čebelarsko društvo.", "Kontaktiraj jih in vprašaj za mentorja ali začetniško izobraževanje.", "Članstvo ni zakonsko obvezno, je pa zelo priporočljivo."],
+  link: "https://www.czs.si",
+  linkLabel: "Poišči društvo",
+ },
+ {
+  id: "rkg",
+  title: "Registracija kmetijskega gospodarstva",
+  why: "Za nadaljnje postopke potrebuješ KMG-MID številko.",
+  how: ["Pojdi na krajevno pristojno Upravno enoto.", "Prinesi osebni dokument in podatke o lokaciji čebel.", "Po vpisu shrani KMG-MID številko v aplikacijo."],
+  link: "https://e-uprava.gov.si/si/upravne-enote.html",
+  linkLabel: "Poišči Upravno enoto",
+  input: "kmgMid",
+ },
+ {
+  id: "eirz",
+  title: "Vpis v evidenco imetnikov živali",
+  why: "Čebelar mora biti vpisan v uradne evidence, ki jih vodi pristojni organ.",
+  how: ["To pogosto urediš skupaj z registracijo na Upravni enoti.", "Če nisi prepričan, preveri pri UVHVVR ali lokalnem društvu."],
+  link: "https://www.gov.si/drzavni-organi/organi-v-sestavi/uprava-za-varno-hrano-veterinarstvo-in-varstvo-rastlin/",
+  linkLabel: "UVHVVR kontakt",
+ },
+ {
+  id: "bees",
+  title: "Pridobi čebele",
+  why: "Začetek je lažji z zdravimi družinami od registriranega čebelarja.",
+  how: ["Kupuj od preverjenega čebelarja.", "Zahtevaj ustrezno veterinarsko potrdilo za promet s čebelami.", "Za začetek sta pogosto dovolj 2 do 3 panji, da se lažje učiš."],
+  link: "https://www.czs.si",
+  linkLabel: "Oglasi in CZS",
+ },
+ {
+  id: "apiary",
+  title: "Registracija čebelnjaka",
+  why: "Čebelnjak mora biti registriran in označen z registrsko tablico.",
+  how: ["Izpolni obrazec za vpis v Register čebelnjakov.", "Pošlji ga pristojni službi.", "Ko prejmeš številko, jo shrani in označi čebelnjak."],
+  link: "https://www.gov.si/assets/organi-v-sestavi/UVHVVR/Identifikacija-in-registracija-zivali/EIRZ/obrazec_vpis_v_RC.pdf",
+  linkLabel: "Prenesi obrazec",
+  input: "apiaryReg",
+ },
+ {
+  id: "vetlog",
+  title: "Dnevnik veterinarskih posegov",
+  why: "Za zdravljenje čebel moraš voditi evidenco posegov in pripravkov.",
+  how: ["Dnevnik potrdi pristojni veterinar oziroma NVI.", "Hrani ga ob čebelnjaku oziroma pri dokumentaciji.", "V aplikaciji lahko zdravljenja beležiš tudi v zavihku Zdravje."],
+  link: "https://www.vf.uni-lj.si",
+  linkLabel: "VF NVI kontakt",
+ },
+ {
+  id: "varroa",
+  title: "Načrt zdravljenja varoje",
+  why: "Varoja je največje zdravstveno tveganje za družine.",
+  how: ["Po zadnjem točenju načrtuj poletno zatiranje.", "V jesensko-zimskem obdobju preveri zdravljenje v času brez zalege.", "Uporabljaj registrirane pripravke in navodila veterinarja."],
+ },
+ {
+  id: "reporting",
+  title: "Letno poročanje UVHVVR",
+  why: "Število čebeljih družin se poroča za popisna datuma 15. april in 31. oktober.",
+  how: ["PametniPanj ima zaslon Zakonsko poročanje.", "Vnesi podatke čebelarja in čebelnjakov.", "Oddaj do 1. decembra."],
+ },
 ];
 
 function makeId(prefix) {
@@ -932,13 +1004,60 @@ function Metric({ icon: Icon, label, value, tone = "plain" }) {
  );
 }
 
+function BeeAIIcon({ size = 24 }) {
+ return (
+  <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+   <path d="M9 4.8c.2-2 1.4-3.2 3-3.2s2.8 1.2 3 3.2" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+   <path d="M10.2 5.2h3.6" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+   <path d="M8.2 8.1c-2.6-2-5.1-1.5-5.8.2-.7 1.8.8 3.6 4 3.7" fill="rgba(232,160,32,.22)" stroke="currentColor" strokeWidth="1.4" />
+   <path d="M15.8 8.1c2.6-2 5.1-1.5 5.8.2.7 1.8-.8 3.6-4 3.7" fill="rgba(232,160,32,.22)" stroke="currentColor" strokeWidth="1.4" />
+   <ellipse cx="12" cy="14" rx="5.6" ry="6.3" fill="#E8A020" stroke="currentColor" strokeWidth="1.4" />
+   <path d="M8 11.2h8M7.2 14.1h9.6M8.3 17h7.4" stroke="#241c12" strokeWidth="1.5" strokeLinecap="round" />
+   <path d="M12 20.4v1.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+   <circle cx="10.2" cy="10.2" r=".75" fill="#241c12" />
+   <circle cx="13.8" cy="10.2" r=".75" fill="#241c12" />
+  </svg>
+ );
+}
+
 function TinyTrend({ values, tone = "honey" }) {
  const max = Math.max(...values, 1);
+ const [mode, setMode] = useState("line");
+ const labels = ["Pon", "Tor", "Sre", "Čet", "Pet", "Sob", "Ned"];
+ const points = values.map((value, index) => {
+  const x = values.length === 1 ? 50 : (index / (values.length - 1)) * 100;
+  const y = 90 - (value / max) * 72;
+  return { x, y, value };
+ });
+ const linePath = points.map((point, index) => `${index ? "L" : "M"} ${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(" ");
+ const areaPath = `${linePath} L 100 96 L 0 96 Z`;
  return (
-  <div className="tiny-trend" aria-hidden="true">
-   {values.map((value, index) => (
-    <i key={index} className={`bar-${tone}`} style={{ height: `${28 + (value / max) * 58}%` }} />
-   ))}
+  <div className="trend-card" aria-label="Gibanje vrednosti">
+   <div className="segmented-row mini-toggle">
+    <button type="button" className={mode === "line" ? "active" : ""} onClick={() => setMode("line")}>Linija</button>
+    <button type="button" className={mode === "bars" ? "active" : ""} onClick={() => setMode("bars")}>Stolpci</button>
+   </div>
+   {mode === "line" ? (
+    <svg className="line-trend" viewBox="0 0 100 100" preserveAspectRatio="none">
+     <path d={areaPath} className="line-area" />
+     <path d={linePath} className="line-path" />
+     {points.map((point, index) => <circle key={index} cx={point.x} cy={point.y} r="2.4" className="line-dot" />)}
+    </svg>
+   ) : (
+    <div className="tiny-trend" aria-label="Stolpci">
+     {values.map((value, index) => {
+      const previous = index ? values[index - 1] : value;
+      const direction = value >= previous ? "green" : "red";
+      return (
+       <span className="trend-bar-wrap" key={index}>
+        <small>{Number(value).toFixed(1)}</small>
+        <i className={`bar-${tone === "green" ? "green" : direction}`} style={{ height: `${28 + (value / max) * 58}%` }} />
+        <em>{labels[index] || index + 1}</em>
+       </span>
+      );
+     })}
+    </div>
+   )}
   </div>
  );
 }
@@ -1043,6 +1162,7 @@ function Dashboard({ data, openHive, goTo }) {
  const [sortBy, setSortBy] = useState("status");
  const [filterBy, setFilterBy] = useState("all");
  const [notificationsOpen, setNotificationsOpen] = useState(false);
+ const [labelBannerOpen, setLabelBannerOpen] = useState(() => localStorage.getItem(LABEL_RULE_KEY) !== "true");
  const activeHives = data.hives.filter((hive) => hive.status !== "archived");
  const counts = useMemo(() => ({
   all: activeHives.length,
@@ -1052,6 +1172,8 @@ function Dashboard({ data, openHive, goTo }) {
  const visibleHives = useMemo(() => sortAndFilterHives(activeHives, sortBy, filterBy), [activeHives, sortBy, filterBy]);
  const seasonHoneyKg = data.extractionEvents.reduce((sum, event) => sum + toNumber(event.netKg), 0);
  const seasonIncome = (data.financeEvents || []).filter((event) => event.type === "income").reduce((sum, event) => sum + toNumber(event.amountEur), 0);
+ const seasonExpense = (data.financeEvents || []).filter((event) => event.type === "expense").reduce((sum, event) => sum + toNumber(event.amountEur), 0);
+ const seasonProfit = seasonIncome - seasonExpense;
  const totalFrames = activeHives.reduce((sum, hive) => sum + toNumber(hive.frameCount, 10), 0);
  const productsThisSeason = seasonHoneyKg + (data.productEvents || []).reduce((sum, event) => sum + (event.unit === "kg" ? toNumber(event.quantity) : toNumber(event.quantity) / 1000), 0);
  const lastVisitMinutes = Math.min(...activeHives.map((hive) => parseRelativeLastSeen(hive.lastSeen)).filter(Number.isFinite));
@@ -1069,6 +1191,9 @@ function Dashboard({ data, openHive, goTo }) {
   ...data.reminders.slice(0, 3).map((reminder) => ({ id: reminder.id, tone: reminder.priority || "ok", title: reminder.title, text: `${getHiveName(data.hives, reminder.hiveId)} · ${reminder.date}`, hiveId: reminder.hiveId })),
  ];
  const urgentCount = notificationItems.filter((item) => item.tone === "danger" || item.tone === "warn").length;
+ const upcomingDashboardItems = [...getLegalReminders(), ...data.reminders]
+  .sort((a, b) => calendarSortValue(a) - calendarSortValue(b))
+  .slice(0, 3);
 
  return (
   <section>
@@ -1085,7 +1210,7 @@ function Dashboard({ data, openHive, goTo }) {
     <div className="hero-copy">
      <p className="eyebrow">PametniPanj</p>
      <h1>{greeting}, Čebelar Luka.</h1>
-     <p>{urgentCount ? `Imaš ${urgentCount} obvestil v zvončku.` : "Danes ni posebnosti. Sprosti se."}</p>
+     <p>{briefing.tone === "ok" ? "Danes ni posebnosti. Sprosti se." : briefing.text}</p>
     </div>
     <div className="summary-strip">
      <div><strong>{counts.all}</strong><span>panjev</span></div>
@@ -1113,21 +1238,13 @@ function Dashboard({ data, openHive, goTo }) {
     </div>
    ) : null}
 
-   {priorityWeather.length ? (
-    <div className="card weather-overview priority-weather">
-     <div className="card-title">
-      <h2>Vremenski napotki</h2>
-      <button className="text-button" onClick={() => goTo("weather")}>Odpri</button>
+   {labelBannerOpen ? (
+    <div className="label-alert">
+     <div>
+      <strong>Nova EU pravila o označevanju medu</strong>
+      <span>Od 14. junija 2026 morajo mešanice medu navajati države izvora z deleži v padajočem vrstnem redu.</span>
      </div>
-     <div className="weather-strip">
-      {priorityWeather.map(({ hive, weather, status }) => (
-       <button className={`weather-chip weather-${status.risk}`} key={hive.id} onClick={() => openHive(hive.id)}>
-        <strong>{hive.name}</strong>
-        <span>{status.text}</span>
-        <small>{status.advice}</small>
-       </button>
-      ))}
-     </div>
+     <button type="button" onClick={() => { localStorage.setItem(LABEL_RULE_KEY, "true"); setLabelBannerOpen(false); }}>Razumem</button>
     </div>
    ) : null}
 
@@ -1181,21 +1298,39 @@ function Dashboard({ data, openHive, goTo }) {
        <ChevronRight size={20} className="chevron" />
       </button>
      );
-    })}
+   })}
    </div>
+
+   {priorityWeather.length ? (
+    <div className="card weather-overview priority-weather">
+     <div className="card-title">
+      <h2>Vremenski napotki</h2>
+      <button className="text-button" onClick={() => goTo("weather")}>Odpri</button>
+     </div>
+     <div className="weather-strip">
+      {priorityWeather.map(({ hive, weather, status }) => (
+       <button className={`weather-chip weather-${status.risk}`} key={hive.id} onClick={() => openHive(hive.id)}>
+        <strong>{hive.name}</strong>
+        <span>{status.text}</span>
+        <small>{status.advice}</small>
+       </button>
+      ))}
+     </div>
+    </div>
+   ) : null}
 
    <div className="quick-grid dashboard-actions">
     <button onClick={() => goTo("create")}><Plus size={20} /> Dodaj panj</button>
     <button onClick={() => goTo("feeding")}><Utensils size={20} /> Hranjenje</button>
     <button onClick={() => goTo("extraction")}><Scale size={20} /> Točenje</button>
-    <button onClick={() => goTo("ai")}><Bot size={20} /> Pametna čebela</button>
+    <button onClick={() => goTo("ai")}><BeeAIIcon size={20} /> Pametna čebela</button>
     <button onClick={() => goTo("weather")}><CloudSun size={20} /> Vreme</button>
     <button onClick={() => goTo("more")}><Settings size={20} /> Orodja</button>
    </div>
 
-   <h2 className="section-title">Danes</h2>
+   <h2 className="section-title">Prihaja</h2>
    <div className="stack">
-    {data.reminders.slice(0, 3).map((reminder) => (
+    {upcomingDashboardItems.map((reminder) => (
      <ReminderRow key={reminder.id} reminder={reminder} hives={data.hives} />
     ))}
    </div>
@@ -1214,6 +1349,7 @@ function Dashboard({ data, openHive, goTo }) {
    <div className="season-card">
     <span>Sezona 2026</span>
     <strong>{seasonHoneyKg.toFixed(0)} kg medu · {seasonIncome.toFixed(0)} € prihodkov</strong>
+    <p className={seasonProfit >= 0 ? "profit-positive" : "profit-negative"}>Dobiček: {seasonProfit.toFixed(0)} €</p>
     <p>{activeHives.length} aktivni panji</p>
    </div>
    <div className="quick-stats-row">
@@ -1583,9 +1719,8 @@ function LocationBlock({ hive }) {
   <div className="location-card">
    <strong>{displayText(hive.locationName || hive.location || "Lokacija")}</strong>
    <span>{sourceLabels[hive.locationSource] || "Lokacija nastavljena ročno"} · {freshnessLabel(hive.locationUpdatedAt)}</span>
-   <span>{sourceLabels[hive.locationSource] || "Lokacija nastavljena ročno"} · {freshnessLabel(hive.locationUpdatedAt)}</span>
    <div className="map-placeholder">Predogled zemljevida</div>
-   <a className="secondary-link" href={mapsUrl} target="_blank" rel="noreferrer">Odpri v Google Maps</a>
+   <a className="secondary-link" href={mapsUrl} target="_blank" rel="noreferrer">{hasCoordinates ? "Odpri v Google Maps" : "Išči v Google Maps"}</a>
   </div>
  );
 }
@@ -3833,7 +3968,7 @@ function AiAssistantPage({ data, openHive, setPage }) {
     action={<span className={["ai-status-dot", cloudAvailable && !limitReached ? "online" : "offline"].join(" ")} title={cloudAvailable && !limitReached ? "Pametna čebela pripravljena" : "Lokalni način"} />}
    />
    <div className="ai-hero-card">
-    <Bot size={42} />
+    <BeeAIIcon size={42} />
     <div>
      <strong>{limitReached ? "Pametna čebela počiva" : "Čebelarski pomočnik"}</strong>
      <span>{priorityHive ? "Najprej bi pogledal panj " + priorityHive.name + "." : "Dodaj panj, da lahko prikažem osnovno stanje."}</span>
@@ -3856,7 +3991,7 @@ function AiAssistantPage({ data, openHive, setPage }) {
    </div>
    <form className="form-card compact-form" onSubmit={(event) => { event.preventDefault(); ask(); }}>
     <label>Vprašanje<input value={question} disabled={thinking} onChange={(event) => setQuestion(event.target.value)} placeholder="npr. zakaj Gozd pada s težo" /></label>
-    <button className="primary-button" type="submit" disabled={thinking}><Bot size={20} /> {thinking ? "Pametna čebela razmišlja..." : "Vprašaj pomočnika"}</button>
+    <button className="primary-button" type="submit" disabled={thinking}><BeeAIIcon size={20} /> {thinking ? "Pametna čebela razmišlja..." : "Vprašaj pomočnika"}</button>
     <p className="subtle">Če pametni odgovor ni na voljo, Pametna čebela odgovori iz lokalnega čebelarskega znanja.</p>
    </form>
    {priorityHive ? <button className="secondary-button full-button" onClick={() => openHive(priorityHive.id)}>Odpri predlagan panj</button> : null}
@@ -3875,6 +4010,7 @@ function DevicesPage({ data }) {
 
 function SettingsPage({ data, setData }) {
  const [importText, setImportText] = useState("");
+ const [userType, setUserType] = useState(() => localStorage.getItem(USER_TYPE_KEY) || "experienced");
 
  function exportJson() {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -3903,10 +4039,22 @@ function SettingsPage({ data, setData }) {
   setData(initialData);
  }
 
+ function updateUserType(value) {
+  setUserType(value);
+  localStorage.setItem(USER_TYPE_KEY, value);
+ }
+
  return (
   <section>
    <PageHeader eyebrow="Nastavitve" title="PametniPanj" subtitle="Offline-first: vsi podatki so v localStorage." />
    <div className="stack">
+    <div className="form-card">
+     <label>Tip uporabnika<select value={userType} onChange={(event) => updateUserType(event.target.value)}>
+      <option value="experienced">Sem že čebelar</option>
+      <option value="beginner">Začenjam s čebelarjenjem</option>
+     </select></label>
+     <p className="subtle">Začetniški vodič je vedno dostopen v Orodja. Samodejni prvi zaslon bova vklopila šele, ko uredimo račune.</p>
+    </div>
     <button className="list-row" onClick={exportJson}><Save size={24} /><div><strong>Export JSON</strong><span>Shrani varnostno kopijo.</span></div></button>
     <div className="form-card">
      <label>Import JSON<textarea value={importText} onChange={(event) => setImportText(event.target.value)} placeholder="Prilepi PametniPanj JSON..." /></label>
@@ -4188,6 +4336,81 @@ function PorocanjePage({ data, saveCensusReport }) {
  );
 }
 
+function BeginnerGuidePage({ setPage }) {
+ const [progress, setProgress] = useState(() => {
+  try { return JSON.parse(localStorage.getItem(BEGINNER_PROGRESS_KEY) || "{}"); } catch { return {}; }
+ });
+ const [kmgMid, setKmgMid] = useState(() => localStorage.getItem(KMG_MID_KEY) || "");
+ const [apiaryReg, setApiaryReg] = useState(() => localStorage.getItem(APIARY_REG_KEY) || "");
+ const doneCount = beginnerSteps.filter((step) => progress[step.id] === "done").length;
+
+ function setStep(id, status) {
+  setProgress((current) => {
+   const next = { ...current, [id]: status };
+   localStorage.setItem(BEGINNER_PROGRESS_KEY, JSON.stringify(next));
+   return next;
+  });
+ }
+
+ function saveBeginnerField(key, value) {
+  if (key === "kmgMid") {
+   setKmgMid(value);
+   localStorage.setItem(KMG_MID_KEY, value);
+  }
+  if (key === "apiaryReg") {
+   setApiaryReg(value);
+   localStorage.setItem(APIARY_REG_KEY, value);
+  }
+ }
+
+ function finishGuide() {
+  localStorage.setItem(USER_TYPE_KEY, "experienced");
+  setPage("dashboard");
+ }
+
+ return (
+  <section>
+   <PageHeader eyebrow="Vodič" title="Začetnik v čebelarstvu" subtitle="Osnovni koraki za varen in urejen začetek v Sloveniji." />
+   <div className="beginner-progress-card">
+    <span>{doneCount}/8 korakov opravljenih</span>
+    <strong>Še {Math.max(0, 8 - doneCount)} korakov do registriranega čebelarja</strong>
+    <div className="progress-bar"><i style={{ width: `${(doneCount / beginnerSteps.length) * 100}%` }} /></div>
+   </div>
+   <div className="stack">
+    {beginnerSteps.map((step, index) => {
+     const status = progress[step.id] || "todo";
+     return (
+      <article className={`beginner-step beginner-${status}`} key={step.id}>
+       <div className="beginner-step-head">
+        <span>{status === "done" ? "Opravljeno" : status === "progress" ? "V delu" : `Korak ${index + 1}`}</span>
+        <strong>{step.title}</strong>
+        <p>{step.why}</p>
+       </div>
+       <details>
+        <summary>Kako to naredim?</summary>
+        <ol>{step.how.map((item) => <li key={item}>{item}</li>)}</ol>
+        {step.link ? <a className="secondary-link" href={step.link} target="_blank" rel="noreferrer">{step.linkLabel}</a> : null}
+        {step.input === "kmgMid" ? <label>KMG-MID<input value={kmgMid} onChange={(event) => saveBeginnerField("kmgMid", event.target.value)} placeholder="npr. 100123456" /></label> : null}
+        {step.input === "apiaryReg" ? <label>Registrska številka čebelnjaka<input value={apiaryReg} onChange={(event) => saveBeginnerField("apiaryReg", event.target.value)} placeholder="npr. SI-123456" /></label> : null}
+       </details>
+       <div className="cloud-actions">
+        <button className="secondary-button" type="button" onClick={() => setStep(step.id, "progress")}>Začenjam</button>
+        <button className="primary-button" type="button" onClick={() => setStep(step.id, "done")}>Označi kot opravljeno</button>
+       </div>
+      </article>
+     );
+    })}
+   </div>
+   {doneCount === beginnerSteps.length ? (
+    <div className="success-panel">
+     <strong>Čestitamo, pripravljen si za dodajanje panjev.</strong>
+     <button className="primary-button" type="button" onClick={finishGuide}>Pojdi na panje</button>
+    </div>
+   ) : null}
+  </section>
+ );
+}
+
 function NewsAdminPage({ data, addNewsItem }) {
  const [unlocked, setUnlocked] = useState(() => localStorage.getItem("pametnipanj-news-admin") === "ok");
  const [password, setPassword] = useState("");
@@ -4267,6 +4490,7 @@ function MorePage({ setPage }) {
    title: "FINANCE",
    items: [
     ["porocanje", "Zakonsko poročanje", Scale, "Popis čebeljih družin · 15.4. in 31.10."],
+    ["beginner", "Vodič za začetnike", HeartPulse, "Društvo, registracije, čebele in prvi roki"],
     ["finance", "Bilanca", Scale, "Prihodki, stroški, dobiček"],
     ["newsAdmin", "Novice admin", CalendarDays, "Objave in koledarski napotki"],
     ["inventory", "Zaloga", ClipboardList, "Sladkor, kozarci, oprema na regalu"],
@@ -4345,11 +4569,16 @@ function DebugPage({ data }) {
 }
 
 function ReminderRow({ reminder, hives }) {
+ const date = parseCalendarDate(reminder.date);
+ const today = startOfDay(new Date());
+ const isOverdue = date && date < today;
+ const isToday = date && calendarKeyForDate(date) === calendarKeyForDate(today);
+ const priority = isOverdue ? "danger" : isToday && reminder.priority !== "danger" ? "warn" : reminder.priority;
  return (
-  <div className={`reminder reminder-${reminder.priority}`}>
+  <div className={`reminder reminder-${priority}`}>
    <CalendarDays size={22} />
    <div>
-    <strong>{reminder.title}</strong>
+    <strong>{isOverdue ? "Zamuda: " : ""}{reminder.title}</strong>
     <span>{getHiveName(hives, reminder.hiveId)} · {reminder.date} · {reminder.time}</span>
    </div>
   </div>
@@ -5133,6 +5362,7 @@ function App() {
   honeyDiary: <HoneyDiaryPage data={data} addHoneySale={addHoneySale} />,
   finance: <FinancePage data={data} addFinanceEvent={addFinanceEvent} />,
   porocanje: <PorocanjePage data={data} saveCensusReport={saveCensusReport} />,
+  beginner: <BeginnerGuidePage setPage={setPage} />,
   newsAdmin: <NewsAdminPage data={data} addNewsItem={addNewsItem} />,
   devices: <DevicesPage data={data} />,
   settings: <SettingsPage data={data} setData={setData} />,

@@ -174,7 +174,7 @@ p {
 
 h1 {
   margin-bottom: 8px;
-  font-size: 1.72rem;
+  font-size: 1.6rem;
   line-height: 1.02;
   letter-spacing: 0;
 }
@@ -734,6 +734,49 @@ h2 {
   display: block;
   margin: 5px 0;
   font-size: 1.12rem;
+}
+
+.profit-positive {
+  color: var(--green) !important;
+  font-weight: 900;
+}
+
+.profit-negative {
+  color: var(--red) !important;
+  font-weight: 900;
+}
+
+.label-alert {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 14px;
+  padding: 14px;
+  border: 1px solid rgba(232, 160, 32, 0.35);
+  border-radius: 18px;
+  background: var(--orange-soft);
+}
+
+.label-alert strong,
+.label-alert span {
+  display: block;
+}
+
+.label-alert span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+
+.label-alert button {
+  min-height: 42px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--honey);
+  font-weight: 900;
 }
 
 .quick-stats-row {
@@ -1736,16 +1779,68 @@ h2 {
   background: var(--orange-soft);
 }
 
+.trend-card {
+  display: grid;
+  gap: 8px;
+}
+
+.mini-toggle {
+  max-width: 240px;
+  margin-bottom: 0;
+}
+
+.line-trend {
+  width: 100%;
+  height: 128px;
+}
+
+.line-area {
+  fill: rgba(232, 160, 32, 0.18);
+}
+
+.line-path {
+  fill: none;
+  stroke: var(--honey);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.line-dot {
+  fill: var(--surface);
+  stroke: var(--honey-dark);
+  stroke-width: 1.5;
+}
+
 .tiny-trend {
   display: flex;
   align-items: end;
   gap: 7px;
-  height: 108px;
+  height: 132px;
   padding-top: 8px;
+}
+
+.trend-bar-wrap {
+  display: grid;
+  grid-template-rows: 24px 1fr 20px;
+  flex: 1;
+  height: 100%;
+  min-width: 22px;
+  align-items: end;
+  text-align: center;
+}
+
+.trend-bar-wrap small,
+.trend-bar-wrap em {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-style: normal;
+  font-weight: 900;
 }
 
 .tiny-trend i {
   flex: 1;
+  width: 100%;
   min-width: 12px;
   border-radius: 7px 7px 3px 3px;
   background: var(--honey);
@@ -1753,6 +1848,10 @@ h2 {
 
 .tiny-trend .bar-green {
   background: var(--green);
+}
+
+.tiny-trend .bar-red {
+  background: var(--red);
 }
 
 .details-card {
@@ -2184,6 +2283,79 @@ select {
 .suggestion-box span {
   color: var(--muted);
   font-size: 0.86rem;
+}
+
+.beginner-progress-card,
+.beginner-step,
+.success-panel {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.beginner-progress-card span,
+.beginner-step span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.progress-bar {
+  height: 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #efe5d5;
+}
+
+.progress-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--green);
+}
+
+.beginner-step {
+  border-left: 6px solid #d8c9b5;
+}
+
+.beginner-done {
+  border-left-color: var(--green);
+}
+
+.beginner-progress {
+  border-left-color: var(--honey);
+}
+
+.beginner-step-head p {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
+.beginner-step details {
+  padding: 10px;
+  border-radius: 14px;
+  background: rgba(245, 237, 224, 0.7);
+}
+
+.beginner-step summary {
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.beginner-step ol {
+  margin: 10px 0;
+  padding-left: 20px;
+}
+
+.success-panel {
+  border-color: rgba(45, 123, 53, 0.3);
+  background: var(--green-soft);
 }
 
 .scale-card {
