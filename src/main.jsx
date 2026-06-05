@@ -337,7 +337,7 @@ function legalRemindersForYear(year = new Date().getFullYear()) {
  return [
   {
    id: `LEGAL-${year}-APR10`,
-   title: "⚖️ Pripravi popis čebeljih družin",
+   title: "Pripravi popis čebeljih družin",
    hiveId: "",
    date: `10. apr ${year}`,
    time: "dopoldne",
@@ -348,7 +348,7 @@ function legalRemindersForYear(year = new Date().getFullYear()) {
   },
   {
    id: `LEGAL-${year}-APR15`,
-   title: "⚖️ POPIS: Stanje čebeljih družin",
+   title: "POPIS: Stanje čebeljih družin",
    hiveId: "",
    date: `15. apr ${year}`,
    time: "ves dan",
@@ -359,7 +359,7 @@ function legalRemindersForYear(year = new Date().getFullYear()) {
   },
   {
    id: `LEGAL-${year}-OCT31`,
-   title: "⚖️ POPIS: Stanje čebeljih družin",
+   title: "POPIS: Stanje čebeljih družin",
    hiveId: "",
    date: `31. okt ${year}`,
    time: "ves dan",
@@ -370,7 +370,7 @@ function legalRemindersForYear(year = new Date().getFullYear()) {
   },
   {
    id: `LEGAL-${year}-NOV25`,
-   title: "⚖️ Rok za poročanje se izteka",
+   title: "Rok za poročanje se izteka",
    hiveId: "",
    date: `25. nov ${year}`,
    time: "dopoldne",
@@ -383,8 +383,14 @@ function legalRemindersForYear(year = new Date().getFullYear()) {
 }
 
 function getLegalReminders() {
- const year = new Date().getFullYear();
- return [...legalRemindersForYear(year), ...legalRemindersForYear(year + 1)];
+ const now = new Date();
+ const year = now.getFullYear();
+ return [...legalRemindersForYear(year), ...legalRemindersForYear(year + 1)]
+  .map((item) => ({ ...item, sortDate: parseCalendarDate(item.date, year) }))
+  .filter((item) => item.sortDate && item.sortDate >= startOfDay(now))
+  .sort((a, b) => a.sortDate - b.sortDate)
+  .slice(0, 1)
+  .map(({ sortDate, ...item }) => item);
 }
 
 function isNearCensusWindow(date = new Date()) {
@@ -411,6 +417,69 @@ function todayLabel() {
  return new Intl.DateTimeFormat("sl-SI", { day: "numeric", month: "short" }).format(new Date());
 }
 
+function startOfDay(value) {
+ const date = new Date(value);
+ date.setHours(0, 0, 0, 0);
+ return date;
+}
+
+const SLOVENIAN_MONTHS = {
+ jan: 0,
+ januar: 0,
+ feb: 1,
+ februar: 1,
+ mar: 2,
+ marec: 2,
+ apr: 3,
+ april: 3,
+ maj: 4,
+ jun: 5,
+ junij: 5,
+ jul: 6,
+ julij: 6,
+ avg: 7,
+ avgust: 7,
+ sep: 8,
+ september: 8,
+ okt: 9,
+ oktober: 9,
+ nov: 10,
+ november: 10,
+ dec: 11,
+ december: 11,
+};
+
+function parseCalendarDate(value, fallbackYear = new Date().getFullYear()) {
+ if (!value) return null;
+ if (value instanceof Date) return startOfDay(value);
+ const text = String(value).trim().toLowerCase();
+ const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+ if (iso) return startOfDay(new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3])));
+ const numeric = text.match(/(\d{1,2})\.\s*(\d{1,2})(?:\.\s*(\d{4}))?/);
+ if (numeric) return startOfDay(new Date(Number(numeric[3] || fallbackYear), Number(numeric[2]) - 1, Number(numeric[1])));
+ const named = text.match(/(\d{1,2})\.\s*([a-zčšž]+)(?:\s+(\d{4}))?/i);
+ if (named) {
+  const month = SLOVENIAN_MONTHS[named[2]];
+  if (month !== undefined) return startOfDay(new Date(Number(named[3] || fallbackYear), month, Number(named[1])));
+ }
+ return null;
+}
+
+function calendarKeyForDate(date) {
+ if (!date) return "";
+ return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+}
+
+function calendarLabel(date) {
+ if (!date) return "";
+ return new Intl.DateTimeFormat("sl-SI", { day: "numeric", month: "long" }).format(date);
+}
+
+function calendarSortValue(item) {
+ const parsed = parseCalendarDate(item.date || item.createdAt);
+ return parsed ? parsed.getTime() : Number.MAX_SAFE_INTEGER;
+}
+
 function toNumber(value, fallback = 0) {
  const number = Number(String(value ?? "").replace(",", "."));
  return Number.isFinite(number) ? number : fallback;
@@ -423,6 +492,15 @@ function roundOne(value) {
 function displayText(value) {
  if (value === null || value === undefined) return "";
  return String(value);
+}
+
+function escapeHtml(value) {
+ return String(value ?? "")
+  .replaceAll("&", "&amp;")
+  .replaceAll("<", "&lt;")
+  .replaceAll(">", "&gt;")
+  .replaceAll('"', "&quot;")
+  .replaceAll("'", "&#039;");
 }
 
 function repairSlovenianText(value) {
@@ -995,7 +1073,7 @@ function Dashboard({ data, openHive, goTo }) {
       <Bell size={23} />
       {urgentCount ? <span>{urgentCount}</span> : null}
      </button>
-     <button className="hero-settings-button" type="button" onClick={() => goTo("more")} aria-label="Nastavitve in orodja">
+     <button className="hero-settings-button" type="button" onClick={() => goTo("settings")} aria-label="Nastavitve">
       <Settings size={19} />
      </button>
     </div>
@@ -1793,36 +1871,49 @@ function CalendarPage({ data, saveParsedEvent, deleteCalendarEntry, setPage }) {
  const [unit, setUnit] = useState("");
  const [suggestion, setSuggestion] = useState(null);
  const days = Array.from({ length: 30 }, (_, index) => index + 1);
- const allReminders = [...getLegalReminders(), ...data.reminders];
- const eventDays = [...allReminders, ...(data.events || [])].reduce((acc, reminder) => {
-  const day = Number.parseInt(reminder.date, 10);
-  if (Number.isFinite(day)) acc[day] = reminder.category || actionTypeLabel(reminder.type);
+ const monthYear = { year: 2026, month: 5 };
+ const allReminders = [...getLegalReminders(), ...data.reminders].sort((a, b) => calendarSortValue(a) - calendarSortValue(b));
+ const calendarItems = [
+  ...allReminders.map((item) => ({ ...item, kind: "reminder" })),
+  ...(data.events || []).filter((event) => event.source === "manual" && event.status !== "archived").map((item) => ({ ...item, kind: "event" })),
+ ].map((item) => ({ ...item, parsedDate: parseCalendarDate(item.date, monthYear.year) }))
+  .filter((item) => item.parsedDate)
+  .sort((a, b) => a.parsedDate - b.parsedDate);
+ const selectedDate = selectedDay ? new Date(monthYear.year, monthYear.month, selectedDay) : null;
+ const selectedKey = selectedDate ? calendarKeyForDate(selectedDate) : "";
+ const selectedItems = selectedKey ? calendarItems.filter((item) => calendarKeyForDate(item.parsedDate) === selectedKey) : [];
+ const upcomingItems = calendarItems.filter((item) => item.parsedDate >= startOfDay(new Date())).slice(0, 8);
+ const eventDays = calendarItems.reduce((acc, item) => {
+  if (item.parsedDate.getFullYear() === monthYear.year && item.parsedDate.getMonth() === monthYear.month) {
+   const day = item.parsedDate.getDate();
+   if (!acc[day]) acc[day] = [];
+   acc[day].push(item);
+  }
   return acc;
  }, {});
  const showReportingShortcut = isNearCensusWindow();
 
  return (
   <section>
-   <PageHeader eyebrow="Opomniki" title="Junij 2026" subtitle="Velike oznake, brez drobnega branja." />
+   <PageHeader eyebrow="Koledar" title="Junij 2026" subtitle="Izberi dan, poglej dogodke in dodaj nov vnos." />
    {showReportingShortcut ? (
     <button className="legal-shortcut" type="button" onClick={() => setPage("porocanje")}>
-     <strong>⚖️ Zakonsko poročanje</strong>
+     <strong>Zakonsko poročanje</strong>
      <span>Popis čebeljih družin je blizu. Pripravi podatke za UVHVVR.</span>
     </button>
    ) : null}
    <PastureCalendarSection hives={data.hives} />
    <div className="calendar-grid">
     {days.map((day) => (
-     <button key={day} onClick={() => { setSelectedDay(day); setText(""); setTitle(""); setAmount(""); setUnit(""); setHiveId(data.hives[0]?.id || ""); setSuggestion(null); }} className={`day ${eventDays[day] ? "has-event" : ""} ${day === 7 ? "today" : ""}`}>
+     <button key={day} onClick={() => { setSelectedDay(day); setText(""); setTitle(""); setAmount(""); setUnit(""); setHiveId(data.hives[0]?.id || ""); setSuggestion(null); }} className={`day ${eventDays[day]?.length ? "has-event" : ""} ${day === 7 ? "today" : ""}`}>
       <strong>{day}</strong>
-      <span>{eventDays[day] || ""}</span>
+      <span>{eventDays[day]?.length ? `${eventDays[day].length} vnos` : ""}</span>
      </button>
     ))}
    </div>
-   <h2 className="section-title">Prihaja</h2>
+   <h2 className="section-title">Naslednji dogodki</h2>
    <div className="stack">
-    {allReminders.map((reminder) => <CalendarEntryRow key={reminder.id} item={reminder} hives={data.hives} kind="reminder" onDelete={deleteCalendarEntry} />)}
-    {(data.events || []).filter((event) => event.source === "manual" && event.status !== "archived").slice(0, 6).map((event) => <CalendarEntryRow key={event.id} item={event} hives={data.hives} kind="event" onDelete={deleteCalendarEntry} />)}
+    {upcomingItems.length ? upcomingItems.map((item) => <CalendarEntryRow key={`${item.kind}-${item.id}`} item={item} hives={data.hives} kind={item.kind} onDelete={deleteCalendarEntry} />) : <p className="empty">Ni prihajajočih dogodkov.</p>}
    </div>
    {selectedDay ? (
     <div className="modal-backdrop">
@@ -1834,7 +1925,7 @@ function CalendarPage({ data, saveParsedEvent, deleteCalendarEntry, setPage }) {
        hiveId,
        amount: amount || suggestion?.amount || "",
        unit: unit || suggestion?.unit || "",
-       date: `${selectedDay}. jun`,
+       date: `${selectedDay}. jun 2026`,
        transcript: text,
        note: text || title || "Koledarski vnos",
       };
@@ -1842,10 +1933,16 @@ function CalendarPage({ data, saveParsedEvent, deleteCalendarEntry, setPage }) {
       setSelectedDay(null);
      }}>
       <div className="card-title">
-       <h2>Dodaj dogodek</h2>
+       <h2>{calendarLabel(selectedDate)}</h2>
        <button className="text-button" type="button" onClick={() => setSelectedDay(null)}>Zapri</button>
       </div>
-      <label>Datum<input value={`${selectedDay}. jun`} readOnly /></label>
+      <div className="day-agenda">
+       {selectedItems.length ? selectedItems.map((item) => (
+        <CalendarEntryRow key={`${item.kind}-${item.id}`} item={item} hives={data.hives} kind={item.kind} onDelete={deleteCalendarEntry} />
+       )) : <p className="empty">Ta dan še nima dogodkov.</p>}
+      </div>
+      <h3 className="compact-heading">Dodaj nov dogodek</h3>
+      <label>Datum<input value={`${selectedDay}. jun 2026`} readOnly /></label>
       <label>Naslov<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="npr. Pregled panja" /></label>
       <HiveSelect hives={data.hives} value={hiveId} onChange={setHiveId} />
       <label>Opis<textarea value={text} onChange={(event) => setText(event.target.value)} placeholder="npr. Pobral sem 1 kg cvetnega prahu iz panja Lipovec." /></label>
@@ -1854,7 +1951,7 @@ function CalendarPage({ data, saveParsedEvent, deleteCalendarEntry, setPage }) {
        <label>Enota<input value={unit} onChange={(event) => setUnit(event.target.value)} placeholder="kg / L" /></label>
       </div>
       <button className="secondary-button" type="button" onClick={() => {
-       const parsed = { ...extractVoiceAction(text, data.hives, hiveId), date: `${selectedDay}. jun` };
+       const parsed = { ...extractVoiceAction(text, data.hives, hiveId), date: `${selectedDay}. jun 2026` };
        setSuggestion(parsed);
        setHiveId(parsed.hiveId || hiveId);
        setAmount(parsed.amount || amount);
@@ -1872,7 +1969,7 @@ function CalendarPage({ data, saveParsedEvent, deleteCalendarEntry, setPage }) {
       <div className="cloud-actions">
        <button className="primary-button" type="submit">Da, shrani</button>
        <button className="secondary-button" type="button" onClick={() => {
-        saveParsedEvent({ type: "general_note", hiveId, title: title || "Opomba", transcript: text, note: text || title, date: `${selectedDay}. jun`, fields: {} }, "manual");
+        saveParsedEvent({ type: "general_note", hiveId, title: title || "Opomba", transcript: text, note: text || title, date: `${selectedDay}. jun 2026`, fields: {} }, "manual");
         setSelectedDay(null);
        }}>Samo opomba</button>
       </div>
@@ -3358,17 +3455,104 @@ function FinancePage({ data, addFinanceEvent }) {
  }
 
  function exportPdf() {
-  const report = rows.map(({ hive, income, expense, profit }) => `${hive.name}: prihodki ${income.toFixed(2)} EUR, stroški ${expense.toFixed(2)} EUR, rezultat ${profit.toFixed(2)} EUR`).join("\n");
-  const categories = [
-   "PRIHODKI",
-   ...incomeByCategory.map(([category, amount]) => `${category}: ${amount.toFixed(2)} EUR`),
-   "",
-   "STROŠKI",
-   ...expenseByCategory.map(([category, amount]) => `${category}: ${amount.toFixed(2)} EUR`),
-  ].join("\n");
   const win = window.open("", "_blank");
   if (!win) return;
-  win.document.write(`<pre style="font:18px Arial;white-space:pre-wrap">PametniPanj finančni pregled 2026\n\nSKUPAJ\nPrihodki: ${total.income.toFixed(2)} EUR\nStroški: ${total.expense.toFixed(2)} EUR\nDobiček: ${total.profit.toFixed(2)} EUR\n\nKATEGORIJE\n${categories}\n\nPO PANJIH\n${report}</pre>`);
+  const categoryRows = (items) => items.length
+   ? items.map(([category, amount]) => `<tr><td>${escapeHtml(category)}</td><td>${amount.toFixed(2)} €</td></tr>`).join("")
+   : `<tr><td>Ni vnosov</td><td>0.00 €</td></tr>`;
+  const hiveRows = rows.map(({ hive, income, expense, profit }) => `
+   <tr>
+    <td>${escapeHtml(hive.name)}</td>
+    <td>${income.toFixed(2)} €</td>
+    <td>${expense.toFixed(2)} €</td>
+    <td class="${profit >= 0 ? "ok" : "warn"}">${profit.toFixed(2)} €</td>
+   </tr>
+  `).join("");
+  win.document.write(`<!doctype html>
+   <html lang="sl">
+   <head>
+    <meta charset="utf-8" />
+    <title>PametniPanj finančni pregled</title>
+    <style>
+     @page { margin: 18mm; }
+     * { box-sizing: border-box; }
+     body {
+      margin: 0;
+      color: #241c12;
+      font: 15px/1.45 Arial, sans-serif;
+      background:
+       linear-gradient(rgba(255,255,255,.9), rgba(255,255,255,.94)),
+       url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='70' height='80'%3E%3Cpath d='M35 3L67 21V59L35 77L3 59V21Z' fill='none' stroke='%23e8a020' stroke-width='2' opacity='.35'/%3E%3C/svg%3E");
+     }
+     body::before {
+      content: "PametniPanj";
+      position: fixed;
+      top: 43%;
+      left: 8%;
+      transform: rotate(-22deg);
+      font-size: 76px;
+      font-weight: 900;
+      color: rgba(232, 160, 32, .12);
+      pointer-events: none;
+      z-index: -1;
+     }
+     header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 20px;
+      padding-bottom: 16px;
+      border-bottom: 3px solid #e8a020;
+      margin-bottom: 18px;
+     }
+     h1 { margin: 0 0 6px; font-size: 30px; }
+     h2 { margin: 24px 0 8px; font-size: 18px; }
+     .brand { font-weight: 900; color: #8a5a08; text-align: right; }
+     .summary {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin: 18px 0;
+     }
+     .box {
+      border: 1px solid #ead8b8;
+      border-radius: 14px;
+      padding: 14px;
+      background: rgba(255, 251, 243, .86);
+     }
+     .box span { display: block; color: #756652; font-size: 12px; font-weight: 700; text-transform: uppercase; }
+     .box strong { display: block; margin-top: 6px; font-size: 24px; }
+     table { width: 100%; border-collapse: collapse; background: rgba(255,255,255,.82); }
+     th, td { padding: 10px; border-bottom: 1px solid #ead8b8; text-align: left; }
+     th { color: #756652; font-size: 12px; text-transform: uppercase; }
+     td:not(:first-child), th:not(:first-child) { text-align: right; }
+     .ok { color: #2f7d3a; font-weight: 800; }
+     .warn { color: #b5471d; font-weight: 800; }
+     footer { margin-top: 24px; color: #756652; font-size: 12px; border-top: 1px solid #ead8b8; padding-top: 10px; }
+    </style>
+   </head>
+   <body>
+    <header>
+     <div>
+      <h1>Finančni pregled 2026</h1>
+      <div>Prihodki, stroški in rezultat po panjih</div>
+     </div>
+     <div class="brand">PametniPanj<br/>pametnipanj.si</div>
+    </header>
+    <section class="summary">
+     <div class="box"><span>Prihodki</span><strong>${total.income.toFixed(2)} €</strong></div>
+     <div class="box"><span>Stroški</span><strong>${total.expense.toFixed(2)} €</strong></div>
+     <div class="box"><span>Dobiček</span><strong class="${total.profit >= 0 ? "ok" : "warn"}">${total.profit.toFixed(2)} €</strong></div>
+    </section>
+    <h2>Po panjih</h2>
+    <table><thead><tr><th>Panj</th><th>Prihodki</th><th>Stroški</th><th>Rezultat</th></tr></thead><tbody>${hiveRows}</tbody></table>
+    <h2>Prihodki po kategorijah</h2>
+    <table><tbody>${categoryRows(incomeByCategory)}</tbody></table>
+    <h2>Stroški po kategorijah</h2>
+    <table><tbody>${categoryRows(expenseByCategory)}</tbody></table>
+    <footer>Izvoz ustvarjen v aplikaciji PametniPanj. Podatke pred oddajo vedno preveri.</footer>
+   </body>
+   </html>`);
   win.document.close();
   win.print();
  }
