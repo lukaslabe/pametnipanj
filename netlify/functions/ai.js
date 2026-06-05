@@ -99,7 +99,7 @@ function generalAssistantAnswer(question) {
     return "Danes je " + new Intl.DateTimeFormat("sl-SI", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Ljubljana" }).format(now) + ".";
   }
   if (/\bdatum\b|\bkateri\b.*\bdatum\b/.test(text)) {
-    return "Dana?nji datum je " + new Intl.DateTimeFormat("sl-SI", { day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Ljubljana" }).format(now) + ".";
+    return "Današnji datum je " + new Intl.DateTimeFormat("sl-SI", { day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Ljubljana" }).format(now) + ".";
   }
   return "";
 }

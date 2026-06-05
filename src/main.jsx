@@ -425,12 +425,37 @@ function displayText(value) {
  return String(value);
 }
 
+function repairSlovenianText(value) {
+ if (typeof value !== "string") return value;
+ return value
+  .replaceAll("AĹ˝", "AŽ")
+  .replaceAll("Ĺľ", "ž")
+  .replaceAll("Ĺˇ", "š")
+  .replaceAll("ÄŤ", "č")
+  .replaceAll("ÄŚ", "Č")
+  .replaceAll("Ĺ˝", "Ž")
+  .replaceAll("Ĺ ", "Š")
+  .replaceAll("Ă©", "é")
+  .replaceAll("WarrĂ©", "Warré")
+  .replaceAll("â‚¬", "€")
+  .replaceAll("Â°", "°")
+  .replaceAll("Â·", "·");
+}
+
+function repairStoredText(value) {
+ if (Array.isArray(value)) return value.map(repairStoredText);
+ if (value && typeof value === "object") {
+  return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, repairStoredText(entry)]));
+ }
+ return repairSlovenianText(value);
+}
+
 function getHive(hives, hiveId) {
  return (hives || []).find((hive) => hive.id === hiveId) || null;
 }
 
 function getHiveName(hives, hiveId) {
- return getHive(hives, hiveId).name || "Neznan panj";
+ return getHive(hives, hiveId)?.name || "Neznan panj";
 }
 
 function isManualHive(hive) {
@@ -452,13 +477,15 @@ const HIVE_TYPE_OPTIONS = [
 ];
 
 function normalizeHiveType(value) {
- const text = value || "";
- if (text === "AŽ") return "AŽ panj";
+ const text = repairSlovenianText(value || "");
+ if (text === "AŽ" || text === "AŽ panj") return "AŽ panj";
  if (text === "Langstroth") return "LR panj (Langstroth)";
+ if (text === "LR panj") return "LR panj (Langstroth)";
  if (text === "Dadant") return "DB panj (Dadant-Blatt)";
+ if (text === "DB panj") return "DB panj (Dadant-Blatt)";
  if (text === "Warré") return "Warréjev panj";
  if (text === "Drugo") return "Drugi tip";
- return text || "AŽ panj";
+ return HIVE_TYPE_OPTIONS.some((type) => type.value === text) ? text : "AŽ panj";
 }
 
 function suggestedForageFromLocation(form) {
@@ -472,7 +499,7 @@ function suggestedForageFromLocation(form) {
 }
 
 function normalizeData(input = {}, persist = false) {
- const data = { ...initialData, ...(input || {}) };
+ const data = repairStoredText({ ...initialData, ...(input || {}) });
  const normalized = {
   ...data,
   hives: Array.isArray(data.hives) ? data.hives : [],
@@ -495,6 +522,7 @@ function normalizeData(input = {}, persist = false) {
   financeEvents: Array.isArray(data.financeEvents) ? data.financeEvents : [],
   honeySales: Array.isArray(data.honeySales) ? data.honeySales : [],
   censusReports: Array.isArray(data.censusReports) ? data.censusReports : [],
+  newsItems: Array.isArray(data.newsItems) ? data.newsItems : [],
   healthRecords: Array.isArray(data.healthRecords) ? data.healthRecords : [],
   hivePhotos: Array.isArray(data.hivePhotos) ? data.hivePhotos : [],
   productEvents: Array.isArray(data.productEvents) ? data.productEvents : [],
@@ -2380,7 +2408,7 @@ function HiveFormPage({ mode, hives, initialHive, initialDraft, saveHive, cancel
     <div className="pill-row">
      {HIVE_TYPE_OPTIONS.map((type) => <button type="button" key={type.value} className={normalizeHiveType(form.hiveType) === type.value ? "active" : ""} onClick={() => update("hiveType", type.value)}>{type.label}</button>)}
     </div>
-    <p className="hint-text">{HIVE_TYPE_OPTIONS.find((type) => type.value === normalizeHiveType(form.hiveType)).description}</p>
+    <p className="hint-text">{(HIVE_TYPE_OPTIONS.find((type) => type.value === normalizeHiveType(form.hiveType)) || HIVE_TYPE_OPTIONS[0]).description}</p>
      </>
     ) : null}
     {showStep(3) ? (
@@ -3258,19 +3286,66 @@ function FillingPage({ data, addFillingEvent }) {
  );
 }
 
-function hiveFinanceSummary(data, hiveId = "") {
- const events = (data.financeEvents || []).filter((event) => !hiveId || event.hiveId === hiveId);
- const income = events.filter((event) => event.type === "income").reduce((sum, event) => sum + toNumber(event.amountEur), 0);
- const expense = events.filter((event) => event.type === "expense").reduce((sum, event) => sum + toNumber(event.amountEur), 0);
- return { income, expense, profit: income - expense };
+function buildFinanceLedger(data) {
+ const ledger = [];
+ const seen = new Set();
+ const add = (entry) => {
+  const id = entry.id || `${entry.source}-${entry.hiveId}-${entry.category}-${entry.amountEur}-${entry.date}`;
+  if (seen.has(id)) return;
+  seen.add(id);
+  ledger.push({ ...entry, id, amountEur: roundOne(entry.amountEur), date: entry.date || todayLabel() });
+ };
+ (data.financeEvents || []).forEach((event) => add({ ...event, source: "finance", description: event.description || event.category }));
+ (data.honeySales || []).forEach((sale) => add({
+  id: `sale-${sale.id}`,
+  source: "honey_sale",
+  hiveId: sale.hiveId,
+  type: "income",
+  category: "Prodan med",
+  description: `${sale.honeyType || "Med"} · ${sale.amountKg} kg · ${sale.customer || "brez kupca"}`,
+  amountEur: toNumber(sale.amountKg) * toNumber(sale.pricePerKg),
+  date: sale.date,
+ }));
+ (data.productEvents || []).forEach((event) => {
+  const amount = toNumber(event.quantity) * toNumber(event.pricePerUnit);
+  if (amount > 0) add({
+   id: `product-${event.id}`,
+   source: "product",
+   hiveId: event.hiveId,
+   type: "income",
+   category: event.productType || "Pridelki",
+   description: `${event.productType}: ${event.quantity} ${event.unit}`,
+   amountEur: amount,
+   date: event.date,
+  });
+ });
+ return ledger.sort((a, b) => new Date(b.createdAt || b.date || 0) - new Date(a.createdAt || a.date || 0));
+}
+
+function financeSummaryFromLedger(ledger, hiveId = "") {
+ const scoped = ledger.filter((event) => !hiveId || event.hiveId === hiveId);
+ const income = scoped.filter((event) => event.type === "income").reduce((sum, event) => sum + toNumber(event.amountEur), 0);
+ const expense = scoped.filter((event) => event.type === "expense").reduce((sum, event) => sum + toNumber(event.amountEur), 0);
+ return { income, expense, profit: income - expense, entries: scoped };
+}
+
+function categoryTotals(ledger, type) {
+ return Object.entries(ledger.filter((event) => event.type === type).reduce((acc, event) => {
+  const key = event.category || "Drugo";
+  acc[key] = (acc[key] || 0) + toNumber(event.amountEur);
+  return acc;
+ }, {})).sort((a, b) => b[1] - a[1]);
 }
 
 function FinancePage({ data, addFinanceEvent }) {
+ const ledger = buildFinanceLedger(data);
  const [form, setForm] = useState({ hiveId: data.hives[0]?.id || "", type: "expense", category: "Sladkor", description: "", amountEur: 10 });
- const total = hiveFinanceSummary(data);
- const rows = data.hives.filter((hive) => hive.status !== "archived").map((hive) => ({ hive, ...hiveFinanceSummary(data, hive.id) }));
+ const total = financeSummaryFromLedger(ledger);
+ const rows = data.hives.filter((hive) => hive.status !== "archived").map((hive) => ({ hive, ...financeSummaryFromLedger(ledger, hive.id) }));
  const incomeCategories = ["Med", "Propolis", "Vosek", "Cvetni prah", "Matično mlečko", "Storitev", "Drugo"];
- const expenseCategories = ["Sladkor", "Zdravila", "Oprema", "Naročnina", "Prevoz", "Panji in naklade", "Registracija", "Izobraževanje", "Drugo"];
+ const expenseCategories = ["Sladkor", "Zdravila", "Oprema", "Naročnina", "Gorivo", "Prevoz", "Panji in naklade", "Registracija", "Izobraževanje", "Drugo"];
+ const incomeByCategory = categoryTotals(ledger, "income");
+ const expenseByCategory = categoryTotals(ledger, "expense");
 
  function submit(event) {
   event.preventDefault();
@@ -3278,11 +3353,22 @@ function FinancePage({ data, addFinanceEvent }) {
   setForm((current) => ({ ...current, description: "", amountEur: 10 }));
  }
 
+ function addQuickExpense(category, amountEur, description) {
+  addFinanceEvent({ hiveId: form.hiveId || data.hives[0]?.id || "", type: "expense", category, amountEur, description });
+ }
+
  function exportPdf() {
   const report = rows.map(({ hive, income, expense, profit }) => `${hive.name}: prihodki ${income.toFixed(2)} EUR, stroški ${expense.toFixed(2)} EUR, rezultat ${profit.toFixed(2)} EUR`).join("\n");
+  const categories = [
+   "PRIHODKI",
+   ...incomeByCategory.map(([category, amount]) => `${category}: ${amount.toFixed(2)} EUR`),
+   "",
+   "STROŠKI",
+   ...expenseByCategory.map(([category, amount]) => `${category}: ${amount.toFixed(2)} EUR`),
+  ].join("\n");
   const win = window.open("", "_blank");
   if (!win) return;
-  win.document.write(`<pre style="font:18px Arial;white-space:pre-wrap">PametniPanj finančni pregled 2026\n\nSKUPAJ\nPrihodki: ${total.income.toFixed(2)} EUR\nStroški: ${total.expense.toFixed(2)} EUR\nDobiček: ${total.profit.toFixed(2)} EUR\n\nPO PANJIH\n${report}</pre>`);
+  win.document.write(`<pre style="font:18px Arial;white-space:pre-wrap">PametniPanj finančni pregled 2026\n\nSKUPAJ\nPrihodki: ${total.income.toFixed(2)} EUR\nStroški: ${total.expense.toFixed(2)} EUR\nDobiček: ${total.profit.toFixed(2)} EUR\n\nKATEGORIJE\n${categories}\n\nPO PANJIH\n${report}</pre>`);
   win.document.close();
   win.print();
  }
@@ -3299,6 +3385,16 @@ function FinancePage({ data, addFinanceEvent }) {
     <Metric icon={Scale} label="Prihodki" value={`${total.income.toFixed(0)} €`} tone="ok" />
     <Metric icon={ClipboardList} label="Stroški" value={`${total.expense.toFixed(0)} €`} tone={total.expense ? "warn" : "ok"} />
    </div>
+   <div className="finance-columns">
+    <div className="finance-panel">
+     <h2>Prihodki</h2>
+     {(incomeByCategory.length ? incomeByCategory : [["Ni prihodkov", 0]]).map(([category, amount]) => <p key={category}><strong>{category}</strong><span>{amount.toFixed(0)} €</span></p>)}
+    </div>
+    <div className="finance-panel">
+     <h2>Stroški</h2>
+     {(expenseByCategory.length ? expenseByCategory : [["Ni stroškov", 0]]).map(([category, amount]) => <p key={category}><strong>{category}</strong><span>{amount.toFixed(0)} €</span></p>)}
+    </div>
+   </div>
    <form className="form-card compact-form" onSubmit={submit}>
     <HiveSelect hives={data.hives} value={form.hiveId} onChange={(value) => setForm((current) => ({ ...current, hiveId: value }))} />
     <label>Vrsta<select value={form.type} onChange={(event) => setForm((current) => ({ ...current, type: event.target.value, category: event.target.value === "income" ? "Med" : "Sladkor" }))}><option value="expense">Strošek</option><option value="income">Prihodek</option></select></label>
@@ -3309,6 +3405,12 @@ function FinancePage({ data, addFinanceEvent }) {
     <label>Opis<input value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} placeholder="npr. gorivo, kozarci, prodaja medu..." /></label>
     <button className="primary-button" type="submit"><Plus size={20} /> Shrani v bilanco</button>
    </form>
+   <div className="pill-row">
+    <button type="button" onClick={() => addQuickExpense("Sladkor", 48, "Nakup sladkorja")}>+ Sladkor 48 €</button>
+    <button type="button" onClick={() => addQuickExpense("Zdravila", 35, "Varoja")}>+ Zdravila 35 €</button>
+    <button type="button" onClick={() => addQuickExpense("Oprema", 120, "Oprema/satnice")}>+ Oprema 120 €</button>
+    <button type="button" onClick={() => addQuickExpense("Gorivo", 40, "Obiski čebelnjaka")}>+ Gorivo 40 €</button>
+   </div>
    <button className="secondary-button full-button" onClick={exportPdf}>Izvoz za PDF</button>
    <h2 className="section-title">Po panjih</h2>
    <div className="stack">
@@ -3321,6 +3423,10 @@ function FinancePage({ data, addFinanceEvent }) {
       </div>
      </article>
     ))}
+   </div>
+   <h2 className="section-title">Zadnji vnosi</h2>
+   <div className="stack">
+    {ledger.slice(0, 8).map((entry) => <EventCard key={entry.id} icon={entry.type === "income" ? ListPlus : ClipboardList} title={`${entry.category}: ${entry.amountEur.toFixed(2)} €`} subtitle={`${getHiveName(data.hives, entry.hiveId)} · ${entry.description || "brez opisa"}`} />)}
    </div>
   </section>
  );
@@ -3405,7 +3511,7 @@ function generalAssistantAnswer(question) {
   return "Danes je " + new Intl.DateTimeFormat("sl-SI", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(now) + ".";
  }
  if (/datum|kateri.*datum/.test(text)) {
-  return "Dana?nji datum je " + new Intl.DateTimeFormat("sl-SI", { day: "numeric", month: "long", year: "numeric" }).format(now) + ".";
+  return "Današnji datum je " + new Intl.DateTimeFormat("sl-SI", { day: "numeric", month: "long", year: "numeric" }).format(now) + ".";
  }
  return "";
 }
@@ -3529,7 +3635,7 @@ function AiAssistantPage({ data, openHive, setPage }) {
     <Bot size={42} />
     <div>
      <strong>{limitReached ? "Pametna čebela počiva" : "Čebelarski pomočnik"}</strong>
-     <span>{priorityHive ? "Najprej bi pogledal panj " + priorityHive.name + "." : "Dodaj panj, da lahko prika?em osnovno stanje."}</span>
+     <span>{priorityHive ? "Najprej bi pogledal panj " + priorityHive.name + "." : "Dodaj panj, da lahko prikažem osnovno stanje."}</span>
     </div>
    </div>
    <div className="ai-budget-card">
@@ -3548,7 +3654,7 @@ function AiAssistantPage({ data, openHive, setPage }) {
     {thinking ? <div className="chat-bubble chat-assistant ai-thinking"><span /> Pametna čebela razmišlja...</div> : null}
    </div>
    <form className="form-card compact-form" onSubmit={(event) => { event.preventDefault(); ask(); }}>
-    <label>Vpra?anje<input value={question} disabled={thinking} onChange={(event) => setQuestion(event.target.value)} placeholder="npr. zakaj Gozd pada s te?o" /></label>
+    <label>Vprašanje<input value={question} disabled={thinking} onChange={(event) => setQuestion(event.target.value)} placeholder="npr. zakaj Gozd pada s težo" /></label>
     <button className="primary-button" type="submit" disabled={thinking}><Bot size={20} /> {thinking ? "Pametna čebela razmišlja..." : "Vprašaj pomočnika"}</button>
     <p className="subtle">Če pametni odgovor ni na voljo, Pametna čebela odgovori iz lokalnega čebelarskega znanja.</p>
    </form>
@@ -3881,6 +3987,62 @@ function PorocanjePage({ data, saveCensusReport }) {
  );
 }
 
+function NewsAdminPage({ data, addNewsItem }) {
+ const [unlocked, setUnlocked] = useState(() => localStorage.getItem("pametnipanj-news-admin") === "ok");
+ const [password, setPassword] = useState("");
+ const [form, setForm] = useState({ title: "", body: "", date: new Date().toISOString().slice(0, 10), calendarDate: "", priority: "ok", addToCalendar: true });
+
+ function login(event) {
+  event.preventDefault();
+  if (password.trim() === "panj2026") {
+   localStorage.setItem("pametnipanj-news-admin", "ok");
+   setUnlocked(true);
+  }
+ }
+
+ function submit(event) {
+  event.preventDefault();
+  addNewsItem(form);
+  setForm((current) => ({ ...current, title: "", body: "", calendarDate: "" }));
+ }
+
+ if (!unlocked) {
+  return (
+   <section>
+    <PageHeader eyebrow="Novice" title="Admin novice" subtitle="Za zdaj lokalni urejevalnik. Geslo je demo in ga pred javno rabo zamenjamo s pravo prijavo." />
+    <form className="form-card compact-form" onSubmit={login}>
+     <label>Geslo<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="demo geslo" /></label>
+     <button className="primary-button" type="submit">Vstop</button>
+     <p className="subtle">Demo geslo: panj2026</p>
+    </form>
+   </section>
+  );
+ }
+
+ return (
+  <section>
+   <PageHeader eyebrow="Novice" title="Admin novice" subtitle="Vpiši novost in jo po potrebi dodaj v koledar." />
+   <form className="form-card compact-form" onSubmit={submit}>
+    <label>Naslov<input value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} placeholder="npr. Kostanj začenja mediti" /></label>
+    <label>Besedilo<textarea value={form.body} onChange={(event) => setForm((current) => ({ ...current, body: event.target.value }))} placeholder="Kaj mora čebelar vedeti?" /></label>
+    <div className="form-grid">
+     <label>Datum novice<input type="date" value={form.date} onChange={(event) => setForm((current) => ({ ...current, date: event.target.value }))} /></label>
+     <label>Datum v koledarju<input type="date" value={form.calendarDate} onChange={(event) => setForm((current) => ({ ...current, calendarDate: event.target.value }))} /></label>
+    </div>
+    <label>Pomembnost<select value={form.priority} onChange={(event) => setForm((current) => ({ ...current, priority: event.target.value }))}><option value="ok">Normalno</option><option value="warn">Pomembno</option><option value="danger">Nujno</option></select></label>
+    <label className="checkbox-row"><input type="checkbox" checked={form.addToCalendar} onChange={(event) => setForm((current) => ({ ...current, addToCalendar: event.target.checked }))} /> Dodaj v koledar</label>
+    <button className="primary-button" type="submit">Shrani novico</button>
+   </form>
+   <div className="card">
+    <h2>Objavljene novice</h2>
+    <div className="stack">
+     {(data.newsItems || []).length ? data.newsItems.map((item) => <EventCard key={item.id} icon={CalendarDays} title={item.title} subtitle={`${item.date} · ${item.priority} · ${item.body}`} />) : <p className="subtle">Ni še novic.</p>}
+    </div>
+   </div>
+  </section>
+ );
+}
+
 function MorePage({ setPage }) {
  const sections = [
   {
@@ -3905,6 +4067,7 @@ function MorePage({ setPage }) {
    items: [
     ["porocanje", "Zakonsko poročanje", Scale, "Popis čebeljih družin · 15.4. in 31.10."],
     ["finance", "Bilanca", Scale, "Prihodki, stroški, dobiček"],
+    ["newsAdmin", "Novice admin", CalendarDays, "Objave in koledarski napotki"],
     ["inventory", "Zaloga", ClipboardList, "Sladkor, kozarci, oprema na regalu"],
     ["filling", "Polnjenje", ListPlus, "Kozarci, serije in ostanek medu"],
     ["devices", "Naprave", Radio, "Povezave s senzorji in tehtnicami"],
@@ -4092,8 +4255,8 @@ class AppErrorBoundary extends React.Component {
    <div className="app-shell">
     <main className="app-main">
      <section className="form-card">
-      <h1>PametniPanj potrebuje osve?itev</h1>
-      <p>Nek podatek je nepopoln ali star. Najprej poskusi znova. ?e se zaslon ponovi, ponastavi demo podatke.</p>
+      <h1>PametniPanj potrebuje osvežitev</h1>
+      <p>Nek podatek je nepopoln ali star. Najprej poskusi znova. Če se zaslon ponovi, ponastavi demo podatke.</p>
       <div className="cloud-actions">
        <button className="primary-button" type="button" onClick={this.retryApp}>Poskusi znova</button>
        <button className="secondary-button" type="button" onClick={this.resetApp}>Ponastavi demo podatke</button>
@@ -4721,6 +4884,33 @@ function App() {
   }));
  }
 
+ function addNewsItem(input) {
+  const item = {
+   id: makeId("NEWS"),
+   title: input.title || "Novica",
+   body: input.body || "",
+   date: input.date || new Date().toISOString().slice(0, 10),
+   calendarDate: input.calendarDate || "",
+   priority: input.priority || "ok",
+   createdAt: new Date().toISOString(),
+  };
+  const reminder = input.addToCalendar && item.calendarDate ? {
+   id: makeId("R"),
+   hiveId: "",
+   title: item.title,
+   date: new Date(item.calendarDate).toLocaleDateString("sl-SI", { day: "numeric", month: "short" }),
+   time: "dopoldne",
+   category: "novica",
+   priority: item.priority,
+   note: item.body,
+  } : null;
+  commitData((current) => ({
+   ...current,
+   newsItems: [item, ...(current.newsItems || [])],
+   reminders: reminder ? [reminder, ...(current.reminders || [])] : current.reminders,
+  }));
+ }
+
  const screens = {
   dashboard: <Dashboard data={data} openHive={openHive} goTo={setPage} />,
   hive: <HiveDetail data={data} hiveId={selectedHiveId} setPage={setPage} startEdit={startEdit} deleteHive={deleteHive} addNoteForHive={addNoteForHive} saveHealthRecord={saveHealthRecord} addHivePhoto={addHivePhoto} deleteHivePhoto={deleteHivePhoto} />,
@@ -4742,6 +4932,7 @@ function App() {
   honeyDiary: <HoneyDiaryPage data={data} addHoneySale={addHoneySale} />,
   finance: <FinancePage data={data} addFinanceEvent={addFinanceEvent} />,
   porocanje: <PorocanjePage data={data} saveCensusReport={saveCensusReport} />,
+  newsAdmin: <NewsAdminPage data={data} addNewsItem={addNewsItem} />,
   devices: <DevicesPage data={data} />,
   settings: <SettingsPage data={data} setData={setData} />,
   debug: <DebugPage data={data} />,
