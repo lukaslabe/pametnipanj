@@ -307,14 +307,14 @@ const AI_DEFAULT_DAILY_LIMIT = 20;
 const localQA = [
  { keys: ["varoa", "varroa", "pršica"], answer: "Varoa je najpogostejši zajedavec čebel. Stopnjo spremljamo z naravnim osipom ali testom s sladkorjem/alkoholom. Če je osip visok, ukrepaj pravočasno in zapiši zdravljenje." },
  { keys: ["oksalna", "oksalna kislina", "zdravljenje"], answer: "Oksalna kislina je najučinkovitejša, ko je družina brez zalege, navadno pozimi. Uporabljaj zaščito in se drži navodil registriranega pripravka." },
- { keys: ["rojenje", "roj", "matinik", "maticnik"], answer: "Znaki rojenja so matičniki, gneča pred vhodom, manj prostora in močna družina v sezoni. Najprej preveri prostor, zalego in matičnike." },
+ { keys: ["rojenje", "roj", "matičnik", "maticnik"], answer: "Znaki rojenja so matičniki, gneča pred vhodom, manj prostora in močna družina v sezoni. Najprej preveri prostor, zalego in matičnike." },
  { keys: ["matica", "matico", "matice"], answer: "Matico zamenjamo, če slabo zalega, je stara, družina postane pretirano agresivna ali ni dovolj zalege. Po dodajanju nove matice preveri sprejem čez nekaj dni." },
  { keys: ["hranjenje", "hraniti", "sirup", "sladkor"], answer: "Poleti se pogosto uporablja sirup 1:1, jeseni gostejši sirup za zimsko zalogo. Ne hrani po nepotrebnem med močno pašo." },
- { keys: ["pogaa", "pogaca", "cvetni prah", "nadomestek"], answer: "Beljakovinska pogača pomaga zgodaj spomladi, ko v naravi ni dovolj peloda. Uporabi jo zmerno in spremljaj razvoj zalege." },
+ { keys: ["pogača", "pogaca", "cvetni prah", "nadomestek"], answer: "Beljakovinska pogača pomaga zgodaj spomladi, ko v naravi ni dovolj peloda. Uporabi jo zmerno in spremljaj razvoj zalege." },
  { keys: ["zimska zaloga", "prezimovanje", "zima"], answer: "Za zimo naj ima družina dovolj hrane, mlado matico, zdrave čebele in mirno prezimovališče. Jeseni preveri varojo in zaloge." },
  { keys: ["medišče", "medisce", "dodati medišče", "kdaj medišče"], answer: "Medišče dodaj, ko je družina močna in je plodišče dobro zasedeno. Bolje malo pred pašo kot prepozno, ko čebele že nimajo prostora." },
  { keys: ["točenje", "tocenje", "točiti", "tociti", "kdaj točiti"], answer: "Toči, ko je satje večinoma zapečateno. Če želiš ločen sortni med, toči pred začetkom naslednje močnejše paše." },
- { keys: ["gniloba", "amerika gniloba", "ameriska gniloba", "apg"], answer: "Ameriška gniloba je huda bolezen zalege in je prijavljiva. Ob sumu ne prestavljaj opreme in se posvetuj z veterinarsko službo." },
+ { keys: ["gniloba", "ameriška gniloba", "ameriska gniloba", "apg"], answer: "Ameriška gniloba je huda bolezen zalege in je prijavljiva. Ob sumu ne prestavljaj opreme in se posvetuj z veterinarsko službo." },
  { keys: ["nosema", "nosemoza"], answer: "Nosema oslabi čebele, pogosto se pokaže spomladi. Pomagajo močne družine, čisto satje, dobra hrana in manj stresa." },
  { keys: ["kalkova zalega"], answer: "Kalkova zalega se pogosto pojavi ob vlagi in slabi zračnosti. Pomagajo močnejša družina, zračnost in menjava starega satja." },
  { keys: ["akacija", "robinija"], answer: "Akacija cveti spomladi in daje svetel med. Paša je zelo odvisna od vremena, mraza in vetra med cvetenjem." },
@@ -328,6 +328,7 @@ const localQA = [
  { keys: ["pregled", "kdaj v panj", "kdaj preveriti"], answer: "Najboljši čas za pregled je topel, miren dan, približno med 10. in 16. uro. Pozimi panja ne odpiramo po nepotrebnem." },
  { keys: ["satnica", "satnice", "menjava"], answer: "Staro temno satje redno menjaj. S tem zmanjšaš ostanke bolezni in izboljšaš razvoj družine." },
 ];
+
 function makeId(prefix) {
  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`.toUpperCase();
 }
@@ -2510,13 +2511,10 @@ function correctBeeTranscript(input, hives = []) {
 }
 
 function normalizeSl(value) {
- return value
+ return String(value || "")
   .toLowerCase()
   .normalize("NFD")
-  .replace(/[\u0300-\u036f]/g, "")
-  .replace(/č/g, "c")
-  .replace(/š/g, "s")
-  .replace(/ž/g, "z");
+  .replace(/[\u0300-\u036f]/g, "");
 }
 
 function findHiveInText(text, hives) {
@@ -3275,14 +3273,14 @@ function buildAiAnswer(question, data) {
  const lowFood = sensorHives.filter((hive) => toNumber(hive.foodDays) < 7);
  const bestHive = sensorHives.find((hive) => toNumber(hive.weeklyDeltaKg) > 1);
 
- if (/tezo|teža|teza|pada|izgublja/.test(text)) {
+ if (/tezo|teza|pada|izgublja/.test(text)) {
   const names = losingWeight.map((hive) => hive.name).join(", ") || "noben panj izrazito";
   return "Najprej poglej panje z upadom teže: " + names + ". Če teža pada in je hrane manj kot 7 dni, je najbolj praktično narediti kratek fizični obisk, preveriti zalogo in vhod. Pri dežju ali hladnem vremenu je padec lahko normalen, pri lepem vremenu pa je to znak za ukrepanje.";
  }
- if (/medisc|medišč|dodati/.test(text)) {
+ if (/medisc|dodati/.test(text)) {
   return bestHive ? "Pri panju " + bestHive.name + " se teža lepo dviguje (" + bestHive.weeklyDeltaKg + " kg v tednu). Če je vreme ugodno in so čebele močne, je to kandidat za dodajanje medišča. Pri panjih z opozorilom najprej preveri zdravje in hrano." : "Trenutno ne vidim panja z močnim dvigom teže. Medišče dodaj, ko je družina močna, vreme ugodno in je v plodišču dovolj čebel.";
  }
- if (/rojenj|maticnik|matičnik/.test(text)) {
+ if (/rojenj|maticnik/.test(text)) {
   return "Znaki rojenja: matičniki, nenadna gneča na bradi, manj prostora in močna družina v sezoni. V PametniPanj bi najprej pogledal zapise v zdravju, zadnje opombe in rast teže. Če vidiš matičnike, naredi pregled hitro, ne šele čez teden.";
  }
  if (/varoj|zdrav/.test(text)) {
@@ -3292,7 +3290,48 @@ function buildAiAnswer(question, data) {
  return "Trenutno imaš " + activeHives.length + " aktivne panje, " + risky.length + " za pregled in " + lowFood.length + " z manj kot 7 dni hrane. Moj praktični predlog: najprej obišči rdeče/oranžne panje, nato preveri hrano in šele potem delaj večje posege.";
 }
 
+const BEE_ASSISTANT_KEYWORDS = [
+ "cebel", "panj", "matic", "zaleg", "roj", "maticnik", "varoj", "prsic", "bolezen", "zdrav", "osip",
+ "med", "medisc", "toc", "iztoc", "sat", "satnic", "vosek", "propolis", "cvetni prah", "pelod",
+ "hran", "sirup", "sladkor", "pogac", "zaloga", "feed", "teht", "teza", "senzor", "naprava", "bater", "signal",
+ "akacij", "lipa", "kostanj", "ajda", "pasa", "gozd", "travnik", "vreme", "dez", "veter", "temperatura",
+ "opomnik", "koledar", "pregled", "zapis", "qr", "regal", "skladisc", "oprema", "panji", "cebelnjak",
+ "kaj naj", "stanje", "opozoril", "obvestil", "danes v panj", "jutri v panj"
+];
+
+function generalAssistantAnswer(question) {
+ const text = normalizeSl(question);
+ const now = new Date();
+ if (/(koliko|kaksna).*ura|cas/.test(text)) {
+  return "Ura je " + new Intl.DateTimeFormat("sl-SI", { hour: "2-digit", minute: "2-digit" }).format(now) + ".";
+ }
+ if (/(kateri|kaksen).*dan|danes.*dan/.test(text)) {
+  return "Danes je " + new Intl.DateTimeFormat("sl-SI", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(now) + ".";
+ }
+ if (/datum|kateri.*datum/.test(text)) {
+  return "Dana?nji datum je " + new Intl.DateTimeFormat("sl-SI", { day: "numeric", month: "long", year: "numeric" }).format(now) + ".";
+ }
+ return "";
+}
+
+function isAllowedSmartBeeQuestion(question, data = {}) {
+ const text = normalizeSl(question);
+ if (generalAssistantAnswer(question)) return true;
+ if (BEE_ASSISTANT_KEYWORDS.some((key) => text.includes(normalizeSl(key)))) return true;
+ return (data.hives || []).some((hive) => {
+  const name = normalizeSl(hive.name);
+  const location = normalizeSl(hive.location || hive.locationName || "");
+  return (name && text.includes(name)) || (location && text.includes(location));
+ });
+}
+
+function offTopicAiMessage() {
+ return "Pametna čebela zna pomagati pri čebelarstvu, panjih, medu, vremenu za pregled, opomnikih, zalogi, senzorjih in tvojem čebelnjaku. Za ostale teme raje vprašaj drugega pomočnika.";
+}
+
 function localAiAnswer(question) {
+ const generalAnswer = generalAssistantAnswer(question);
+ if (generalAnswer) return generalAnswer;
  const text = normalizeSl(question);
  const match = localQA.find((entry) => entry.keys.some((key) => text.includes(normalizeSl(key))));
  return match?.answer || "";
@@ -3319,10 +3358,11 @@ function aiTiredMessage() {
 function AiAssistantPage({ data, openHive, setPage }) {
  const suggestions = ["Kdaj dodati medišče", "Znaki rojenja", "Kako zdraviti varojo", "Kdaj točiti med"];
  const [question, setQuestion] = useState("");
+ const [thinking, setThinking] = useState(false);
  const [dailyLimit, setDailyLimit] = useState(() => Number(localStorage.getItem(AI_DAILY_LIMIT_KEY) || AI_DEFAULT_DAILY_LIMIT));
  const [usage, setUsage] = useState(() => readAiUsage());
  const [messages, setMessages] = useState([
-  { role: "assistant", text: "Pametna čebela najprej odgovori lokalno. Za zahtevnejša vprašanja uporabi pametni odgovor, če je strežnik nastavljen in dnevna omejitev še ni dosežena." },
+  { role: "assistant", text: "Pametna čebela najprej odgovori lokalno. Zahtevnejša vprašanja obdela samo, če so povezana s čebelarstvom ali osnovnimi podatki, kot sta datum in ura." },
  ]);
  const cloudAvailable = Boolean(AI_API_URL);
  const limitReached = usage.count >= dailyLimit;
@@ -3334,19 +3374,25 @@ function AiAssistantPage({ data, openHive, setPage }) {
 
  async function ask(nextQuestion = question) {
   const clean = nextQuestion.trim();
-  if (!clean) return;
-  const localAnswer = localAiAnswer(clean);
-  if (localAnswer) {
-   addExchange(clean, localAnswer);
-   setQuestion("");
-   return;
-  }
-  if (!cloudAvailable || limitReached) {
-   addExchange(clean, buildAiAnswer(clean, data) || aiTiredMessage());
-   setQuestion("");
-   return;
-  }
+  if (!clean || thinking) return;
+  setThinking(true);
   try {
+   const localAnswer = localAiAnswer(clean);
+   if (localAnswer) {
+    addExchange(clean, localAnswer);
+    setQuestion("");
+    return;
+   }
+   if (!isAllowedSmartBeeQuestion(clean, data)) {
+    addExchange(clean, offTopicAiMessage());
+    setQuestion("");
+    return;
+   }
+   if (!cloudAvailable || limitReached) {
+    addExchange(clean, buildAiAnswer(clean, data) || aiTiredMessage());
+    setQuestion("");
+    return;
+   }
    const response = await fetch(AI_API_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -3360,10 +3406,13 @@ function AiAssistantPage({ data, openHive, setPage }) {
    saveAiUsage(nextUsage);
    setUsage(nextUsage);
    addExchange(clean, answer);
+   setQuestion("");
   } catch {
    addExchange(clean, aiTiredMessage() + " " + buildAiAnswer(clean, data));
+   setQuestion("");
+  } finally {
+   setThinking(false);
   }
-  setQuestion("");
  }
 
  function updateDailyLimit(value) {
@@ -3375,16 +3424,16 @@ function AiAssistantPage({ data, openHive, setPage }) {
  return (
   <section>
    <PageHeader
-   eyebrow="Pametna čebela"
+    eyebrow="Pametna čebela"
     title="Čebelarski pomočnik"
-    subtitle="Osnovni odgovori delujejo lokalno. Pametni odgovor se uporabi samo za zahtevnejša vprašanja."
+    subtitle="Odgovarja na čebelarska vprašanja in osnovne stvari, kot sta datum in ura. Ostale teme zavrne."
     action={<span className={["ai-status-dot", cloudAvailable && !limitReached ? "online" : "offline"].join(" ")} title={cloudAvailable && !limitReached ? "Pametna čebela pripravljena" : "Lokalni način"} />}
    />
    <div className="ai-hero-card">
     <Bot size={42} />
     <div>
      <strong>{limitReached ? "Pametna čebela počiva" : "Čebelarski pomočnik"}</strong>
-     <span>{priorityHive ? "Najprej bi pogledal panj " + priorityHive.name + "." : "Dodaj panj, da lahko prikažem osnovno stanje."}</span>
+     <span>{priorityHive ? "Najprej bi pogledal panj " + priorityHive.name + "." : "Dodaj panj, da lahko prika?em osnovno stanje."}</span>
     </div>
    </div>
    <div className="ai-budget-card">
@@ -3396,14 +3445,15 @@ function AiAssistantPage({ data, openHive, setPage }) {
    </div>
    {limitReached ? <p className="warning-text">{aiTiredMessage()}</p> : null}
    <div className="pill-row">
-    {suggestions.map((item) => <button type="button" key={item} onClick={() => ask(item)}>{item}</button>)}
+    {suggestions.map((item) => <button type="button" key={item} disabled={thinking} onClick={() => ask(item)}>{item}</button>)}
    </div>
-   <div className="chat-card">
+   <div className="chat-card" aria-live="polite">
     {messages.map((message, index) => <div key={index} className={["chat-bubble", "chat-" + message.role].join(" ")}>{message.text}</div>)}
+    {thinking ? <div className="chat-bubble chat-assistant ai-thinking"><span /> Pametna čebela razmišlja...</div> : null}
    </div>
    <form className="form-card compact-form" onSubmit={(event) => { event.preventDefault(); ask(); }}>
-    <label>Vprašanje<input value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="npr. zakaj Gozd pada s težo" /></label>
-    <button className="primary-button" type="submit"><Bot size={20} /> Vprašaj pomočnika</button>
+    <label>Vpra?anje<input value={question} disabled={thinking} onChange={(event) => setQuestion(event.target.value)} placeholder="npr. zakaj Gozd pada s te?o" /></label>
+    <button className="primary-button" type="submit" disabled={thinking}><Bot size={20} /> {thinking ? "Pametna čebela razmišlja..." : "Vprašaj pomočnika"}</button>
     <p className="subtle">Če pametni odgovor ni na voljo, Pametna čebela odgovori iz lokalnega čebelarskega znanja.</p>
    </form>
    {priorityHive ? <button className="secondary-button full-button" onClick={() => openHive(priorityHive.id)}>Odpri predlagan panj</button> : null}
