@@ -1760,7 +1760,7 @@ function CalendarPage({ data, saveParsedEvent, deleteCalendarEntry, setPage }) {
  const [selectedDay, setSelectedDay] = useState(null);
  const [text, setText] = useState("");
  const [title, setTitle] = useState("");
- const [hiveId, setHiveId] = useState(data.hives[0].id || "");
+ const [hiveId, setHiveId] = useState(data.hives[0]?.id || "");
  const [amount, setAmount] = useState("");
  const [unit, setUnit] = useState("");
  const [suggestion, setSuggestion] = useState(null);
@@ -1785,7 +1785,7 @@ function CalendarPage({ data, saveParsedEvent, deleteCalendarEntry, setPage }) {
    <PastureCalendarSection hives={data.hives} />
    <div className="calendar-grid">
     {days.map((day) => (
-     <button key={day} onClick={() => { setSelectedDay(day); setText(""); setTitle(""); setAmount(""); setUnit(""); setHiveId(data.hives[0].id || ""); setSuggestion(null); }} className={`day ${eventDays[day] ? "has-event" : ""} ${day === 7 ? "today" : ""}`}>
+     <button key={day} onClick={() => { setSelectedDay(day); setText(""); setTitle(""); setAmount(""); setUnit(""); setHiveId(data.hives[0]?.id || ""); setSuggestion(null); }} className={`day ${eventDays[day] ? "has-event" : ""} ${day === 7 ? "today" : ""}`}>
       <strong>{day}</strong>
       <span>{eventDays[day] || ""}</span>
      </button>
@@ -1802,10 +1802,10 @@ function CalendarPage({ data, saveParsedEvent, deleteCalendarEntry, setPage }) {
       event.preventDefault();
       const parsed = {
        ...(suggestion || extractVoiceAction(text, data.hives, hiveId)),
-       title: title || suggestion.title || actionTypeLabel(suggestion.type || detectActionType(normalizeSl(text))),
+       title: title || suggestion?.title || actionTypeLabel(suggestion?.type || detectActionType(normalizeSl(text))),
        hiveId,
-       amount: amount || suggestion.amount || "",
-       unit: unit || suggestion.unit || "",
+       amount: amount || suggestion?.amount || "",
+       unit: unit || suggestion?.unit || "",
        date: `${selectedDay}. jun`,
        transcript: text,
        note: text || title || "Koledarski vnos",
@@ -2702,9 +2702,21 @@ function compareActionWithSensors(data, action) {
  return { status: "manual", message: "Zapis shranjen ročno." };
 }
 
+function cleanRepeatedSpeech(text) {
+ const words = String(text || "").replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+ const cleaned = [];
+ words.forEach((word) => {
+  const current = normalizeSl(word);
+  const previous = normalizeSl(cleaned[cleaned.length - 1] || "");
+  if (current && current === previous) return;
+  cleaned.push(word);
+ });
+ return cleaned.join(" ");
+}
+
 function VoicePage({ data, saveVoiceAction, initialHiveId }) {
  const [recording, setRecording] = useState(false);
- const [hiveId, setHiveId] = useState(initialHiveId || data.hives[0].id || "");
+ const [hiveId, setHiveId] = useState(initialHiveId || data.hives[0]?.id || "");
  const [draft, setDraft] = useState("Danes sem pregledal panj. Matica je prisotna, zalega je mirna.");
  const [originalTranscript, setOriginalTranscript] = useState("");
  const [correctionMessage, setCorrectionMessage] = useState("");
@@ -2749,9 +2761,9 @@ function VoicePage({ data, saveVoiceAction, initialHiveId }) {
    setExtracted(null);
   };
   recognition.onresult = (event) => {
-   let finalText = finalTranscriptRef.current;
+   let finalText = "";
    let interimText = "";
-   for (let index = event.resultIndex; index < event.results.length; index += 1) {
+   for (let index = 0; index < event.results.length; index += 1) {
     const result = event.results[index];
     const alternatives = Array.from(result || []);
     const best = (alternatives.find((item) => item.confidence >= 0.55) || alternatives[0])?.transcript || "";
@@ -2760,7 +2772,7 @@ function VoicePage({ data, saveVoiceAction, initialHiveId }) {
     else interimText += `${best} `;
    }
    finalTranscriptRef.current = finalText;
-   const liveTranscript = `${finalText}${interimText}`.replace(/\s+/g, " ").trim();
+   const liveTranscript = cleanRepeatedSpeech(`${finalText}${interimText}`);
    const corrected = correctBeeTranscript(liveTranscript, data.hives);
    setOriginalTranscript(liveTranscript);
    setDraft(corrected.text);
@@ -2860,7 +2872,7 @@ function VoicePage({ data, saveVoiceAction, initialHiveId }) {
 
 
 function FeedingPage({ data, addFeedingEvent }) {
- const [form, setForm] = useState({ hiveId: data.hives[0].id || "", amountLiters: 2, feedType: "sirup 1:1", note: "" });
+ const [form, setForm] = useState({ hiveId: data.hives[0]?.id || "", amountLiters: 2, feedType: "sirup 1:1", note: "" });
  const selectedHive = getHive(data.hives, form.hiveId);
  const foodPct = Math.min(100, selectedHive.foodLiters * 10);
  const dailySugarCost = 0.8;
@@ -2909,7 +2921,7 @@ function FeedingPage({ data, addFeedingEvent }) {
 }
 
 function ExtractionPage({ data, addExtractionEvent }) {
- const [form, setForm] = useState({ hiveId: data.hives[0].id || "", boxId: "QR-BOX-014", honeyType: "akacija", frames: 8, grossKg: 20, emptyKg: 4, notes: "" });
+ const [form, setForm] = useState({ hiveId: data.hives[0]?.id || "", boxId: "QR-BOX-014", honeyType: "akacija", frames: 8, grossKg: 20, emptyKg: 4, notes: "" });
  const total = data.extractionEvents.reduce((sum, event) => sum + event.netKg, 0);
  const netPreview = Math.max(0, toNumber(form.grossKg) - toNumber(form.emptyKg)).toFixed(1);
 
@@ -2963,7 +2975,7 @@ function ExtractionPage({ data, addExtractionEvent }) {
 }
 
 function PocketScalePage({ data, saveScaleMeasurement, saveParsedEvent }) {
- const [hiveId, setHiveId] = useState(data.hives[0].id || "");
+ const [hiveId, setHiveId] = useState(data.hives[0]?.id || "");
  const [type, setType] = useState("pollen_harvest");
  const [tare, setTare] = useState(0.42);
  const [weight, setWeight] = useState(1.24);
@@ -3063,7 +3075,7 @@ function PocketScalePage({ data, saveScaleMeasurement, saveParsedEvent }) {
 }
 
 function PollenPage({ data, addPollenEvent }) {
- const [form, setForm] = useState({ hiveId: data.hives[0].id || "", amountKg: 1, notes: "" });
+ const [form, setForm] = useState({ hiveId: data.hives[0]?.id || "", amountKg: 1, notes: "" });
  const total = data.pollenEvents.reduce((sum, event) => sum + toNumber(event.amountKg), 0);
 
  return (
@@ -3089,7 +3101,7 @@ const PRODUCT_UNITS = {
 };
 
 function ProductsPage({ data, addProductEvent }) {
- const [form, setForm] = useState({ hiveId: data.hives[0].id || "", productType: "propolis", quantity: 100, unit: "g", pricePerUnit: 0.04, note: "" });
+ const [form, setForm] = useState({ hiveId: data.hives[0]?.id || "", productType: "propolis", quantity: 100, unit: "g", pricePerUnit: 0.04, note: "" });
  const annualTotal = (type) => (data.productEvents || []).filter((event) => event.productType === type).reduce((sum, event) => sum + toNumber(event.quantity), 0);
  const revenue = (data.productEvents || []).reduce((sum, event) => sum + toNumber(event.quantity) * toNumber(event.pricePerUnit), 0);
  const productTypes = ["med", "cvetni prah", "propolis", "vosek", "matični mleček"];
@@ -3223,7 +3235,7 @@ function InventoryItemCard({ item, addInventoryTransaction }) {
 }
 
 function FillingPage({ data, addFillingEvent }) {
- const [form, setForm] = useState({ batchId: data.honeyBatches[0].id || "", jarSizeKg: 0.45, jarCount: 100, shelf: "Regal B2" });
+ const [form, setForm] = useState({ batchId: data.honeyBatches[0]?.id || "", jarSizeKg: 0.45, jarCount: 100, shelf: "Regal B2" });
  const batch = data.honeyBatches.find((item) => item.id === form.batchId) || data.honeyBatches[0];
  const usedKg = toNumber(form.jarSizeKg) * toNumber(form.jarCount);
  const remaining = batch ? toNumber(batch.remainingKg) - usedKg : 0;
@@ -3254,7 +3266,7 @@ function hiveFinanceSummary(data, hiveId = "") {
 }
 
 function FinancePage({ data, addFinanceEvent }) {
- const [form, setForm] = useState({ hiveId: data.hives[0].id || "", type: "expense", category: "Sladkor", description: "", amountEur: 10 });
+ const [form, setForm] = useState({ hiveId: data.hives[0]?.id || "", type: "expense", category: "Sladkor", description: "", amountEur: 10 });
  const total = hiveFinanceSummary(data);
  const rows = data.hives.filter((hive) => hive.status !== "archived").map((hive) => ({ hive, ...hiveFinanceSummary(data, hive.id) }));
  const incomeCategories = ["Med", "Propolis", "Vosek", "Cvetni prah", "Matično mlečko", "Storitev", "Drugo"];
@@ -3315,7 +3327,7 @@ function FinancePage({ data, addFinanceEvent }) {
 }
 
 function HoneyDiaryPage({ data, addHoneySale }) {
- const [form, setForm] = useState({ hiveId: data.hives[0].id || "", honeyType: "cvetlični", amountKg: 5, pricePerKg: 12, customer: "", qrCode: "QR-JAR-" });
+ const [form, setForm] = useState({ hiveId: data.hives[0]?.id || "", honeyType: "cvetlični", amountKg: 5, pricePerKg: 12, customer: "", qrCode: "QR-JAR-" });
  const totalKg = (data.honeySales || []).reduce((sum, sale) => sum + toNumber(sale.amountKg), 0);
  const totalEur = (data.honeySales || []).reduce((sum, sale) => sum + toNumber(sale.amountKg) * toNumber(sale.pricePerKg), 0);
 
@@ -4067,7 +4079,11 @@ class AppErrorBoundary extends React.Component {
     if (/beecare|pametnipanj|bee-care/i.test(key)) localStorage.removeItem(key);
    });
   } catch {}
-  window.location.href = `${window.location.origin}${window.location.pathname}?fresh=1`;
+  window.location.href = window.location.origin + window.location.pathname + "?fresh=1";
+ };
+
+ retryApp = () => {
+  window.location.href = window.location.origin + window.location.pathname + "?fresh=" + Date.now();
  };
 
  render() {
@@ -4076,9 +4092,12 @@ class AppErrorBoundary extends React.Component {
    <div className="app-shell">
     <main className="app-main">
      <section className="form-card">
-      <h1>PametniPanj potrebuje osvežitev</h1>
-      <p>Nek podatek je nepopoln ali star. Osveži aplikacijo, podatke pa lahko po potrebi vneseš znova.</p>
-      <button className="primary-button" type="button" onClick={this.resetApp}>Osveži aplikacijo</button>
+      <h1>PametniPanj potrebuje osve?itev</h1>
+      <p>Nek podatek je nepopoln ali star. Najprej poskusi znova. ?e se zaslon ponovi, ponastavi demo podatke.</p>
+      <div className="cloud-actions">
+       <button className="primary-button" type="button" onClick={this.retryApp}>Poskusi znova</button>
+       <button className="secondary-button" type="button" onClick={this.resetApp}>Ponastavi demo podatke</button>
+      </div>
      </section>
     </main>
    </div>
@@ -4101,7 +4120,7 @@ function App() {
  const [authMessage, setAuthMessage] = useState("");
  const [cloudStatus, setCloudStatus] = useState("Pripravljen za sinhronizacijo.");
  const [page, setPage] = useState("dashboard");
- const [selectedHiveId, setSelectedHiveId] = useState(data.hives[0].id || "");
+ const [selectedHiveId, setSelectedHiveId] = useState(data.hives[0]?.id || "");
  const [editingHiveId, setEditingHiveId] = useState("");
  const [inventoryShelf, setInventoryShelf] = useState("");
  const [inventoryDraft, setInventoryDraft] = useState(null);
@@ -4200,7 +4219,7 @@ function App() {
 
  useEffect(() => {
   if (!data.hives.some((hive) => hive.id === selectedHiveId)) {
-   setSelectedHiveId(data.hives[0].id || "");
+   setSelectedHiveId(data.hives[0]?.id || "");
    if (!data.hives.length) setPage("create");
   }
  }, [data.hives, selectedHiveId]);
@@ -4448,7 +4467,7 @@ function App() {
     const name = action.fields.item === "sugar" ? "Sladkor" : action.fields.item === "jars" ? "Kozarci" : action.fields.item === "lids" ? "Pokrovčki" : "Zaloga";
     next = applyInventoryChange(next, { name, quantity: toNumber(action.amount, 0), unit: action.unit || "kos", shelf: "Ni določeno", direction: "add", source });
    } else {
-    const note = { id: makeId("N"), hiveId: action.hiveId || current.hives[0].id || "", type: source, title: actionTypeLabel(action.type), text: action.note, date: action.date, duration: null, createdAt: genericEvent.createdAt };
+    const note = { id: makeId("N"), hiveId: action.hiveId || current.hives[0]?.id || "", type: source, title: actionTypeLabel(action.type), text: action.note, date: action.date, duration: null, createdAt: genericEvent.createdAt };
     next = { ...next, notes: [note, ...next.notes] };
    }
    return next;
