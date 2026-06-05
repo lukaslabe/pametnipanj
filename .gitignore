@@ -1,0 +1,36 @@
+# Dependencies and package caches
+node_modules/
+.pnpm-store/
+package/
+*.tgz
+
+# Build output
+dist/
+.vite/
+
+# Local deployment and service state
+.netlify/
+.vercel/
+
+# Local secrets
+.env
+.env.*
+!.env.example
+
+# Logs and temporary files
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.DS_Store
+Thumbs.db
+
+# Large local reference/deploy artifacts
+*.zip
+beecare-app.html
+tools/cloudflared*.exe
+
+# External reference material kept locally
+_beecare_reference/
+.claude/

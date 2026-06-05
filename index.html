@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="sl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#15120c" />
+    <meta name="description" content="PametniPanj je preprost slovenski pomočnik za čebelarje: panji, QR sledljivost, opomniki, zdravje, zaloga in bilanca." />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <title>PametniPanj</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      (function () {
+        var params = new URLSearchParams(window.location.search);
+        if (params.has("fresh") || params.has("reset") || params.has("clean")) {
+          try {
+            Object.keys(localStorage || {}).forEach(function (key) {
+              if (/beecare|pametnipanj|bee-care/i.test(key)) localStorage.removeItem(key);
+            });
+          } catch (error) {}
+          Promise.resolve()
+            .then(function () {
+              return "serviceWorker" in navigator
+                ? navigator.serviceWorker.getRegistrations().then(function (items) {
+                    return Promise.all(items.map(function (item) { return item.unregister(); }));
+                  })
+                : null;
+            })
+            .then(function () {
+              return "caches" in window
+                ? caches.keys().then(function (keys) {
+                    return Promise.all(keys.map(function (key) { return caches.delete(key); }));
+                  })
+                : null;
+            })
+            .finally(function () {
+              window.location.replace(window.location.origin + window.location.pathname + "?cleaned=" + Date.now());
+            });
+        }
+        window.addEventListener("error", function () {
+          setTimeout(function () {
+            var root = document.getElementById("root");
+            if (root && !root.children.length) {
+              root.innerHTML = '<div style="font-family:system-ui;padding:24px;max-width:520px;margin:0 auto"><h1>PametniPanj se osvežuje</h1><p>Če je stran ostala prazna, odpri povezavo z dodatkom <strong>?fresh=1</strong>.</p><button onclick="location.href=location.origin+location.pathname+\'?fresh=1\'" style="font:inherit;padding:12px 18px;border-radius:12px;border:0;background:#f2a313;color:#1d160b;font-weight:700">Osveži aplikacijo</button></div>';
+            }
+          }, 500);
+        });
+      })();
+    </script>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
