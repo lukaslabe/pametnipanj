@@ -6,6 +6,7 @@ import {
  BatteryCharging,
  Bell,
  Bot,
+ BookOpen,
  CalendarDays,
  Camera,
  Check,
@@ -237,9 +238,9 @@ const initialData = {
   { id: "R-004", hiveId: "BC-2026-003", title: "Točenje medu", date: "7. jun", time: "08:30", category: "točenje", priority: "ok", createdAt: "2026-05-28T06:00:00.000Z" },
   { id: "R-005", hiveId: "", title: "Novo označevanje medu z QR kodo", date: "14. jun 2026", time: "ves dan", category: "sledljivost", priority: "danger", note: "Od danes začni serije medu označevati z QR kodo. Pri točenju in polnjenju preveri, da ima vsaka serija svoj QR zapis.", createdAt: "2026-06-05T12:00:00.000Z" },
   { id: "R-006", hiveId: "", title: "FFS: previdno pri cvetenju", date: "6. jun 2026", time: "zjutraj", category: "varstvo čebel", priority: "warn", note: "Kontaktna sredstva, nevarna za čebele, se smejo uporabljati le ponoči med cvetenjem; sistemična sredstva so med cvetenjem prepovedana. Preveri škropljenja v okolici.", createdAt: "2026-06-05T13:00:00.000Z" },
-  { id: "R-007", hiveId: "", title: "Pašni redi: objava stojišč", date: "30. jun 2026", time: "do konca dneva", category: "pašni redi", priority: "warn", note: "Društva morajo do konca junija objaviti razpoložljiva stojišča in podatke o številu stojišč.", createdAt: "2026-06-05T13:05:00.000Z" },
-  { id: "R-008", hiveId: "", title: "Rok: subvencioniranje vzreje matic", date: "3. jul 2026", time: "15:00", category: "razpis", priority: "danger", note: "Rok za oddajo vlog za subvencioniranje vzreje čebeljih matic v programskem letu 2026.", createdAt: "2026-06-05T13:10:00.000Z" },
-  { id: "R-009", hiveId: "", title: "Rok: čebelarske intervencije", date: "31. jul 2026", time: "15:00", category: "razpis", priority: "danger", note: "Zadnji rok za večino čebelarskih intervencij oziroma do porabe sredstev.", createdAt: "2026-06-05T13:15:00.000Z" },
+  { id: "R-007", hiveId: "", title: "Pašni redi: objava stojišč", date: "30. jun 2026", time: "do konca dneva", category: "pašni redi", priority: "warn", note: "Društva morajo objaviti razpoložljiva stojišča in podatke o številu stojišč.", audience: "Čebelarska društva s potrjenim pašnim redom.", instructions: ["Preveri potrjen pašni red društva.", "Objavi razpoložljiva stojišča in zahtevane podatke.", "Za podporo društvu preveri javni razpis in pogoje."], sourceLabel: "Uradna stran GOV.SI", sourceUrl: "https://www.gov.si/zbirke/storitve/podpora-cebelarskim-drustvom-za-izvajanje-pasnih-redov-v-programskem-letu-2026/", createdAt: "2026-06-05T13:05:00.000Z" },
+  { id: "R-008", hiveId: "", title: "Rok: subvencioniranje vzreje matic", date: "3. jul 2026", time: "15:00", category: "razpis", priority: "danger", note: "Podpora je namenjena odobrenim vzrejevalcem čebeljih matic in plemenilnim postajam. Razpisanih je do 97.000 €.", audience: "Vzrejevalci matic, vpisani v Register čebelnjakov, z odobrenim vzrejališčem in zahtevanimi potrdili.", instructions: ["Preveri, ali izpolnjuješ pogoje razpisa in imaš zahtevana dokazila.", "Pripravi skenirane priloge ter dostop do SI-PASS in kvalificiranega elektronskega podpisa.", "Odpri E-kmetijstvo, izpolni vlogo, jo elektronsko podpiši in oddaj najpozneje do 3. julija 2026 do 15.00."], sourceLabel: "Razpis in prijava na GOV.SI", sourceUrl: "https://www.gov.si/zbirke/storitve/subvencioniranje-vzreje-cebeljih-matic-v-programskem-letu-2026/", applyLabel: "Odpri razpis in prijavo", createdAt: "2026-06-05T13:10:00.000Z" },
+  { id: "R-009", hiveId: "", title: "Rok: čebelarske intervencije", date: "31. jul 2026", time: "15:00", category: "razpis", priority: "danger", note: "Več razpisov se zapre ob porabi sredstev ali najpozneje 31. julija 2026 do 15.00.", audience: "Čebelarji, društva in organizacije, odvisno od posameznega razpisa.", instructions: ["Na uradni strani izberi razpis, ki te zanima: oprema, zdravila, sadike medovitih rastlin, pašni redi ali učni čebelnjaki.", "Preveri pogoje in razpoložljiva sredstva, saj se lahko razpis zapre pred rokom.", "Pripravi račune in dokazila ter vlogo oddaj elektronsko."], sourceLabel: "Pregled čebelarskih razpisov GOV.SI", sourceUrl: "https://www.gov.si/novice/2026-03-02-javni-razpisi-za-novo-cebelarsko-programsko-leto/", applyLabel: "Poglej vse razpise", createdAt: "2026-06-05T13:15:00.000Z" },
   { id: "R-010", hiveId: "", title: "Poletno zdravljenje varoje", date: "20. jul 2026", time: "dopoldne", category: "zdravje", priority: "warn", note: "Po zadnjem točenju načrtuj poletno zatiranje varoje. Uporabi registrirane pripravke in upoštevaj navodila veterinarja.", createdAt: "2026-06-05T13:20:00.000Z" },
   { id: "R-011", hiveId: "", title: "Jesensko zdravljenje varoje", date: "1. nov 2026", time: "dopoldne", category: "zdravje", priority: "warn", note: "Ob obdobju brez zalege preveri jesensko-zimsko zdravljenje varoje, pogosto z oksalno kislino ali drugim registriranim pripravkom.", createdAt: "2026-06-05T13:25:00.000Z" },
  ],
@@ -308,7 +309,7 @@ const nav = [
  { id: "calendar", label: "Koledar", icon: CalendarDays },
  { id: "qr", label: "QR", icon: QrCode },
  { id: "ai", label: "Čebela", icon: BeeAIIcon },
- { id: "voice", label: "Glas", icon: Mic },
+ { id: "voice", label: "Zapiski", icon: BookOpen },
 ];
 
 const AI_API_URL = import.meta.env.VITE_AI_API_URL || "/.netlify/functions/ai";
@@ -682,8 +683,20 @@ function normalizeData(input = {}, persist = false) {
   hivePhotos: Array.isArray(data.hivePhotos) ? data.hivePhotos : [],
   productEvents: Array.isArray(data.productEvents) ? data.productEvents : [],
   neighborAlerts: Array.isArray(data.neighborAlerts) ? data.neighborAlerts : [],
- weather: Array.isArray(data.weather) ? data.weather : [],
+  weather: Array.isArray(data.weather) ? data.weather : [],
  };
+ const systemReminderIds = new Set(["R-005", "R-006", "R-007", "R-008", "R-009", "R-010", "R-011"]);
+ const storedRemindersById = new Map(normalized.reminders.map((reminder) => [reminder.id, reminder]));
+ const currentSystemReminders = initialData.reminders
+  .filter((reminder) => systemReminderIds.has(reminder.id))
+  .map((reminder) => ({
+   ...(storedRemindersById.get(reminder.id) || {}),
+   ...reminder,
+  }));
+ normalized.reminders = [
+  ...normalized.reminders.filter((reminder) => !systemReminderIds.has(reminder.id)),
+  ...currentSystemReminders,
+ ];
  normalized.hives = normalized.hives.map((hive) => {
   const dataSource = hive.dataSource || (hive.deviceId ? "sensor" : "manual");
   const nextHive = { ...hive, dataSource, hiveType: normalizeHiveType(hive.hiveType) };
@@ -1693,7 +1706,7 @@ function HiveDetail({ data, hiveId, setPage, startEdit, deleteHive, addNoteForHi
    <div className="card">
     <div className="card-title">
      <h2>Časovnica panja</h2>
-     <button className="text-button" onClick={() => addNoteForHive(hive.id)}>Dodaj noto</button>
+     <button className="text-button" onClick={() => addNoteForHive(hive.id)}>Odpri beležnico</button>
     </div>
     <div className="timeline-list">
      {timeline.map((item) => <TimelineItem key={item.id} item={item} />)}
@@ -1968,6 +1981,7 @@ function actionTypeLabel(type) {
  const labels = {
   feeding: "Hranjenje",
   inspection: "Pregled panja",
+  varroa_observation: "Opažena varoja",
   varroa_treatment: "Tretiranje varoje",
   honey_extraction: "Točenje medu",
   pollen_harvest: "Cvetni prah",
@@ -2138,6 +2152,7 @@ function CalendarEntryRow({ item, hives, kind, onDelete }) {
  const subtitle = kind === "reminder"
   ? getHiveName(hives, item.hiveId) + " · " + item.date + " · " + item.time
   : getHiveName(hives, item.hiveId) + " · " + item.date + " · " + (structuredData.note || item.originalText || "");
+ const hasDetails = Boolean(item.audience || item.instructions?.length || item.sourceUrl);
 
  return (
   <article className={"reminder reminder-" + (item.priority || "ok") + (item.legal ? " legal-reminder" : "")}>
@@ -2146,6 +2161,22 @@ function CalendarEntryRow({ item, hives, kind, onDelete }) {
     <strong>{title} {item.legal ? <span className="legal-badge">ZAKONSKO</span> : null}</strong>
     <span>{subtitle}</span>
     {item.note ? <small>{item.note}</small> : null}
+    {hasDetails ? (
+     <details className="calendar-event-details">
+      <summary>Podrobnosti in prijava</summary>
+      {item.audience ? <p><strong>Za koga:</strong> {item.audience}</p> : null}
+      {item.instructions?.length ? (
+       <ol>
+        {item.instructions.map((instruction) => <li key={instruction}>{instruction}</li>)}
+       </ol>
+      ) : null}
+      {item.sourceUrl ? (
+       <a className="calendar-event-source" href={item.sourceUrl} target="_blank" rel="noreferrer">
+        {item.applyLabel || item.sourceLabel || "Odpri uradni vir"}
+       </a>
+      ) : null}
+     </details>
+    ) : null}
    </div>
    {!item.legal ? <button className="icon-button small-icon-button" type="button" onClick={() => onDelete(item.id, kind)} aria-label="Izbriši dogodek"><Trash2 size={18} /></button> : null}
   </article>
@@ -2787,6 +2818,7 @@ function HiveFormPage({ mode, hives, initialHive, initialDraft, saveHive, cancel
 const supportedActionTypes = [
  "feeding",
  "inspection",
+ "varroa_observation",
  "varroa_treatment",
  "honey_extraction",
  "pollen_harvest",
@@ -2908,6 +2940,7 @@ function detectActionType(text) {
  if (/cvetn.*prah|pollen/.test(text)) return "pollen_harvest";
  if (/zalogo|sladkor|kozar|pokrov|vosk|satnic/.test(text) && /(dodaj|dodal|odstran|porab)/.test(text)) return "inventory_update";
  if (/skladisc|regal|shramb/.test(text)) return "storage_note";
+ if (/varoj/.test(text) && !/mravljic|oksal|tretir|zdravil/.test(text)) return "varroa_observation";
  if (/varoj|mravljic|oksal|tretir/.test(text)) return "varroa_treatment";
  if (/(iztoč|točil|točenje).*(med|kg|kilogram)/.test(text)) return "honey_extraction";
  if (/(vzel|odstran|snel).*(medisc|naklad)/.test(text)) return "removed_super";
@@ -2930,6 +2963,7 @@ function buildActionNote(type, amount, unit, transcript) {
  if (type === "inventory_update") return amount ? `Zaloga posodobljena: ${amount} ${unit}.` : "Zaloga posodobljena.";
  if (type === "storage_note") return "Opomba o skladiščenju.";
  if (type === "swarm_cells_seen") return "Viden/i matičniki.";
+ if (type === "varroa_observation") return "Opažena varoja.";
  if (type === "varroa_treatment") return "Tretiranje proti varoji.";
  if (type === "added_super") return "Dodano medišče.";
  if (type === "removed_super") return "Odstranjeno medišče.";
@@ -2991,7 +3025,7 @@ function cleanRepeatedSpeech(text) {
  return cleaned.join(" ");
 }
 
-function VoicePage({ data, saveVoiceAction, initialHiveId }) {
+function LegacyVoicePage({ data, saveVoiceAction, initialHiveId }) {
  const [recording, setRecording] = useState(false);
  const [hiveId, setHiveId] = useState(initialHiveId || data.hives[0]?.id || "");
  const [draft, setDraft] = useState("Danes sem pregledal panj. Matica je prisotna, zalega je mirna.");
@@ -3143,6 +3177,210 @@ function VoicePage({ data, saveVoiceAction, initialHiveId }) {
    ) : null}
    <h2 className="section-title">Zadnji glasovni dogodki</h2>
    <div className="stack">{(data.voiceActions || []).map((action) => <EventCard key={action.id} icon={Mic} title={actionTypeLabel(action.type)} subtitle={`${getHiveName(data.hives, action.hiveId)} · ${action.note}`} />)}</div>
+  </section>
+ );
+}
+
+function analyzeNotebookText(text, hives, fallbackHiveId) {
+ const cleanText = String(text || "").trim();
+ if (!cleanText) return null;
+ const action = extractVoiceAction(cleanText, hives, fallbackHiveId);
+ if (action.type === "general_note") return null;
+ const messages = {
+  varroa_observation: "V zapisu je omenjena varoja. Predlagam ločen vpis opažanja, da ga bomo lahko primerjali z drugimi panji in prihodnjimi pregledi.",
+  varroa_treatment: "Zapis verjetno opisuje tretiranje varoje. Predlagam vpis zdravljenja v zgodovino panja.",
+  swarm_cells_seen: "Omenjeni so matičniki. Predlagam vpis opozorila o možnosti rojenja.",
+  swarm_event: "Zapis verjetno opisuje roj. Predlagam ločen vpis rojilnega dogodka.",
+  feeding: "Prepoznal sem hranjenje. Predlagam vpis v evidenco hranjenja.",
+  honey_extraction: "Prepoznal sem točenje medu. Predlagam vpis v evidenco točenja.",
+  queen_replaced: "Prepoznal sem menjavo matice. Predlagam vpis v zgodovino panja.",
+  queen_seen: "Prepoznal sem opaženo matico. Predlagam vpis v zgodovino panja.",
+  brood_checked: "Prepoznal sem pregled zalege. Predlagam vpis pregleda.",
+ };
+ return {
+  ...action,
+  note: action.note || cleanText,
+  transcript: cleanText,
+  suggestionMessage: messages[action.type] || `Predlagam dodaten vpis: ${actionTypeLabel(action.type).toLowerCase()}.`,
+ };
+}
+
+function VoicePage({ data, saveNotebookNote, confirmNotebookSuggestion, deleteNote, initialHiveId }) {
+ const [hiveId, setHiveId] = useState(initialHiveId || data.hives[0]?.id || "");
+ const [title, setTitle] = useState("");
+ const [text, setText] = useState("");
+ const [photo, setPhoto] = useState(null);
+ const [recording, setRecording] = useState(false);
+ const [speechMessage, setSpeechMessage] = useState("");
+ const [filterHiveId, setFilterHiveId] = useState("all");
+ const [sortMode, setSortMode] = useState("date");
+ const [suggestionDismissed, setSuggestionDismissed] = useState(false);
+ const recognitionRef = useRef(null);
+ const finalTranscriptRef = useRef("");
+
+ useEffect(() => {
+  if (initialHiveId) setHiveId(initialHiveId);
+ }, [initialHiveId]);
+
+ useEffect(() => () => {
+  if (recognitionRef.current) recognitionRef.current.stop();
+ }, []);
+
+ const suggestion = useMemo(
+  () => suggestionDismissed ? null : analyzeNotebookText(text, data.hives, hiveId),
+  [text, data.hives, hiveId, suggestionDismissed],
+ );
+
+ const visibleNotes = useMemo(() => {
+  const filtered = (data.notes || []).filter((note) => filterHiveId === "all" || note.hiveId === filterHiveId);
+  return [...filtered].sort((a, b) => {
+   if (sortMode === "hive") {
+    const hiveCompare = getHiveName(data.hives, a.hiveId).localeCompare(getHiveName(data.hives, b.hiveId), "sl");
+    if (hiveCompare) return hiveCompare;
+   }
+   return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+  });
+ }, [data.notes, data.hives, filterHiveId, sortMode]);
+
+ function startVoiceCapture() {
+  if (recording && recognitionRef.current) {
+   recognitionRef.current.stop();
+   return;
+  }
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+   setSpeechMessage("Ta brskalnik ne podpira glasovnega prepisa. Zapis lahko vneseš ročno.");
+   return;
+  }
+  const recognition = new SpeechRecognition();
+  recognitionRef.current = recognition;
+  recognition.lang = "sl-SI";
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.maxAlternatives = 3;
+  finalTranscriptRef.current = text.trim();
+  recognition.onstart = () => {
+   setRecording(true);
+   setSpeechMessage("Poslušam in prepisujem sproti ...");
+  };
+  recognition.onresult = (event) => {
+   let interimText = "";
+   for (let index = event.resultIndex; index < event.results.length; index += 1) {
+    const result = event.results[index];
+    const alternatives = Array.from(result || []);
+    const best = (alternatives.find((item) => item.confidence >= 0.55) || alternatives[0])?.transcript?.trim() || "";
+    if (!best) continue;
+    if (result.isFinal) finalTranscriptRef.current = cleanRepeatedSpeech(`${finalTranscriptRef.current} ${best}`);
+    else interimText = `${interimText} ${best}`.trim();
+   }
+   const liveText = cleanRepeatedSpeech(`${finalTranscriptRef.current} ${interimText}`);
+   setText(correctBeeTranscript(liveText, data.hives).text);
+   setSuggestionDismissed(false);
+  };
+  recognition.onerror = (event) => {
+   setSpeechMessage(event.error === "not-allowed" ? "Dovoli uporabo mikrofona in poskusi znova." : "Glasovni prepis se je ustavil. Zapis lahko nadaljuješ ročno.");
+   setRecording(false);
+  };
+  recognition.onend = () => {
+   setRecording(false);
+   setSpeechMessage("Prepis je pripravljen. Pred shranjevanjem ga lahko popraviš.");
+   recognitionRef.current = null;
+  };
+  recognition.start();
+ }
+
+ function handlePhoto(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  if (file.size > 4 * 1024 * 1024) {
+   alert("Fotografija je večja od 4 MB. Izberi manjšo fotografijo.");
+   return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => setPhoto({ url: reader.result, sizeMb: roundOne(file.size / 1024 / 1024), name: file.name });
+  reader.readAsDataURL(file);
+ }
+
+ function clearComposer() {
+  setTitle("");
+  setText("");
+  setPhoto(null);
+  setSuggestionDismissed(false);
+  setSpeechMessage("");
+ }
+
+ function submitNote(event) {
+  event.preventDefault();
+  if (!text.trim() && !photo) return;
+  saveNotebookNote({ hiveId, title, text, photo });
+  clearComposer();
+ }
+
+ function acceptSuggestion() {
+  if (!suggestion) return;
+  confirmNotebookSuggestion(suggestion);
+  setSuggestionDismissed(true);
+ }
+
+ return (
+  <section className="notebook-page">
+   <PageHeader eyebrow="Beležnica panjev" title="Zapiski" subtitle="Zapiši opažanje, dodaj fotografijo ali narekuj. Pametna čebela predlaga pomembne vpise, ti pa jih vedno potrdiš." />
+
+   <form className="notebook-composer" onSubmit={submitNote}>
+    <div className="notebook-paper">
+     <HiveSelect hives={data.hives} value={hiveId} onChange={(value) => { setHiveId(value); setSuggestionDismissed(false); }} />
+     <input className="notebook-title-input" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Naslov zapisa" />
+     <textarea className="notebook-textarea" value={text} onChange={(event) => { setText(event.target.value); setSuggestionDismissed(false); }} placeholder="Kaj si danes opazil pri panju?" />
+     {photo ? <div className="notebook-photo-preview"><img src={photo.url} alt="Fotografija zapiska" /><button type="button" className="text-button" onClick={() => setPhoto(null)}>Odstrani fotografijo</button></div> : null}
+    </div>
+    <div className="notebook-tools">
+     <button className={`notebook-mic-button ${recording ? "recording" : ""}`} type="button" onClick={startVoiceCapture}><Mic size={22} /> {recording ? "Ustavi snemanje" : "Narekuj"}</button>
+     <label className="notebook-photo-button"><Camera size={22} /> Fotografija<input type="file" accept="image/*" capture="environment" onChange={handlePhoto} /></label>
+     <button className="primary-button notebook-save-button" type="submit"><Save size={20} /> Shrani zapis</button>
+    </div>
+    {speechMessage ? <p className="hint-text">{speechMessage}</p> : null}
+   </form>
+
+   {suggestion ? (
+    <div className={`notebook-ai-suggestion ${suggestion.type === "varroa_observation" || suggestion.type === "swarm_cells_seen" ? "important" : ""}`}>
+     <Bot size={24} />
+     <div>
+      <strong>Pametna čebela predlaga</strong>
+      <p>{suggestion.suggestionMessage}</p>
+      <span>{getHiveName(data.hives, suggestion.hiveId)} · {actionTypeLabel(suggestion.type)}</span>
+      <div className="notebook-suggestion-actions">
+       <button type="button" className="primary-button compact-button" onClick={acceptSuggestion}><Check size={18} /> Potrdi vpis</button>
+       <button type="button" className="secondary-button compact-button" onClick={() => setSuggestionDismissed(true)}>Ne zdaj</button>
+      </div>
+     </div>
+    </div>
+   ) : null}
+
+   <div className="notebook-library-head">
+    <div>
+     <p className="eyebrow">Beležnice</p>
+     <h2>{filterHiveId === "all" ? "Vsi zapiski" : getHiveName(data.hives, filterHiveId)}</h2>
+    </div>
+    <select value={sortMode} onChange={(event) => setSortMode(event.target.value)} aria-label="Razvrsti zapiske">
+     <option value="date">Najnovejši</option>
+     <option value="hive">Po panjih</option>
+    </select>
+   </div>
+   <div className="notebook-hive-tabs">
+    <button type="button" className={filterHiveId === "all" ? "active" : ""} onClick={() => setFilterHiveId("all")}>Vsi</button>
+    {data.hives.map((hive) => <button type="button" key={hive.id} className={filterHiveId === hive.id ? "active" : ""} onClick={() => setFilterHiveId(hive.id)}>{hive.name}</button>)}
+   </div>
+   <div className="notebook-list">
+    {visibleNotes.length ? visibleNotes.map((note) => (
+     <article className="notebook-entry" key={note.id}>
+      <div className="notebook-entry-meta"><span>{getHiveName(data.hives, note.hiveId)}</span><time>{note.date}</time></div>
+      <h3>{note.title}</h3>
+      <p>{note.text}</p>
+      {note.photoUrl ? <img src={note.photoUrl} alt={note.title || "Fotografija zapiska"} /> : null}
+      <button className="icon-button small-icon-button notebook-delete" type="button" onClick={() => deleteNote(note.id)} aria-label="Izbriši zapis"><Trash2 size={18} /></button>
+     </article>
+    )) : <div className="empty">Za ta panj še ni zapiskov.</div>}
+   </div>
   </section>
  );
 }
@@ -4905,6 +5143,76 @@ function App() {
   setPage("hive");
  }
 
+ function saveNotebookNote(input) {
+  const now = new Date().toISOString();
+  const note = {
+   id: makeId("N"),
+   hiveId: input.hiveId,
+   type: input.photo ? "photo_note" : "manual",
+   title: input.title.trim() || "Zapis iz beležnice",
+   text: input.text.trim() || "Fotografija brez dodatne opombe.",
+   photoUrl: input.photo?.url || "",
+   date: todayLabel(),
+   duration: null,
+   createdAt: now,
+  };
+  const photo = input.photo ? {
+   id: makeId("HP"),
+   hiveId: input.hiveId,
+   date: note.date,
+   caption: note.text,
+   url: input.photo.url,
+   sizeMb: input.photo.sizeMb || 0,
+   aiAnalysis: "",
+   createdAt: now,
+  } : null;
+  commitData((current) => ({
+   ...current,
+   notes: [note, ...current.notes],
+   hivePhotos: photo ? [photo, ...(current.hivePhotos || [])] : current.hivePhotos,
+   events: [createEvent({ hiveId: note.hiveId, type: "general_note", source: "notebook", originalText: note.text, structuredData: { noteId: note.id, title: note.title, photoId: photo?.id || "" } }), ...(current.events || [])],
+  }));
+ }
+
+ function confirmNotebookSuggestion(input) {
+  const now = new Date().toISOString();
+  const action = { ...input, date: input.date || todayLabel(), confirmedAt: now };
+  const event = createEvent({
+   hiveId: action.hiveId,
+   type: action.type,
+   source: "notebook_ai",
+   originalText: action.transcript,
+   structuredData: action,
+  });
+  commitData((current) => {
+   const next = {
+    ...current,
+    events: [event, ...(current.events || [])],
+   };
+   if (action.type !== "varroa_observation") return next;
+   const healthRecord = {
+    id: makeId("HL"),
+    hiveId: action.hiveId,
+    varroaLevel: 2,
+    inspectionDate: action.date,
+    treatment: "Ni označeno",
+    queenStatus: "Ni podatka",
+    queenLastSeen: "",
+    queenYear: "",
+    diseases: ["Varoza - opažanje"],
+    notes: action.transcript,
+    source: "notebook_ai",
+    createdAt: now,
+   };
+   return { ...next, healthRecords: [healthRecord, ...(current.healthRecords || [])] };
+  });
+ }
+
+ function deleteNote(noteId) {
+  if (!window.confirm("Izbrišem ta zapis?")) return;
+  commitData((current) => ({ ...current, notes: current.notes.filter((note) => note.id !== noteId) }));
+ }
+
  function addNoteForHive(hiveId) {
   setSelectedHiveId(hiveId);
   setPage("voice");
@@ -5347,7 +5655,7 @@ function App() {
   calendar: <CalendarPage data={data} saveParsedEvent={saveParsedEvent} deleteCalendarEntry={deleteCalendarEntry} setPage={setPage} />,
     qr: <QRPage data={data} setData={commitData} openHive={openHive} openInventoryShelf={openInventoryShelf} startHiveWizard={startHiveWizard} />,
     ai: <AiAssistantPage data={data} openHive={openHive} setPage={setPage} />,
-  voice: <VoicePage data={data} saveVoiceAction={saveVoiceAction} initialHiveId={selectedHiveId} />,
+  voice: <VoicePage data={data} saveNotebookNote={saveNotebookNote} confirmNotebookSuggestion={confirmNotebookSuggestion} deleteNote={deleteNote} initialHiveId={selectedHiveId} />,
   more: <MorePage setPage={setPage} />,
   weather: <WeatherPage data={data} openHive={openHive} />,
     create: <HiveFormPage mode="create" hives={data.hives} initialDraft={newHiveDraft} saveHive={saveHive} cancel={() => setPage("dashboard")} />,
