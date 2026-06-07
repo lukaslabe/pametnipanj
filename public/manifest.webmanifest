@@ -1,7 +1,10 @@
 {
+  "id": "/",
   "name": "PametniPanj",
   "short_name": "PametniPanj",
+  "description": "Preprost slovenski pomočnik za čebelarje.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#f7f1e7",
   "theme_color": "#15120c",
@@ -10,7 +13,8 @@
     {
       "src": "/icon.svg",
       "sizes": "any",
-      "type": "image/svg+xml"
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
     }
   ]
 }

@@ -4712,7 +4712,7 @@ function DevicesPage({ data }) {
  );
 }
 
-function SettingsPage({ data, setData, session, onSignOut }) {
+function SettingsPage({ data, setData, session, profile, installAvailable, installed, onInstall, onSignOut }) {
  const [importText, setImportText] = useState("");
  const [userType, setUserType] = useState(() => localStorage.getItem(USER_TYPE_KEY) || "experienced");
  const [planId, setPlanId] = useState(() => resolvePlanId(localStorage.getItem(PLAN_KEY)));
@@ -4758,7 +4758,20 @@ function SettingsPage({ data, setData, session, onSignOut }) {
   <section>
    <PageHeader eyebrow="Nastavitve" title="PametniPanj" subtitle="Offline-first: vsi podatki so v localStorage." />
    <div className="stack">
-    {session ? <button className="list-row" type="button" onClick={onSignOut}><LogOut size={24} /><div><strong>Odjava</strong><span>Odjavi ta račun iz naprave.</span></div></button> : null}
+    <div className="form-card account-settings-card">
+     <div className="card-title"><div><span>Aplikacija na telefonu</span><h2>{installed ? "PametniPanj je nameščen" : "Namesti PametniPanj"}</h2></div><Download size={24} /></div>
+     {installed ? <p className="subtle">Aplikacijo lahko odpreš neposredno z začetnega zaslona.</p> : installAvailable ? (
+      <button className="primary-button full-button" type="button" onClick={onInstall}><Download size={20} /> Namesti aplikacijo</button>
+     ) : (
+      <p className="subtle">Na Androidu odpri meni brskalnika in izberi »Namesti aplikacijo«. Na iPhonu izberi Deli in nato »Dodaj na začetni zaslon«. Namestitev deluje prek varne povezave pametnipanj.si.</p>
+     )}
+    </div>
+    {session ? (
+     <div className="form-card account-settings-card">
+      <div className="card-title"><div><span>Prijavljeni račun</span><h2>{profile?.full_name || profile?.username || session.user?.user_metadata?.username || session.user?.email?.split("@")[0]}</h2></div></div>
+      <button className="secondary-button full-button" type="button" onClick={onSignOut}><LogOut size={20} /> Odjava in menjava računa</button>
+     </div>
+    ) : null}
     <div className="form-card">
      <div className="card-title"><div><span>Testiranje naročnin</span><h2>Izbrani paket: {PLAN_OPTIONS[planId].label}</h2></div></div>
      <div className="plan-options">
@@ -5899,6 +5912,8 @@ function App() {
  const [authMessage, setAuthMessage] = useState("");
  const [registrationPlanOpen, setRegistrationPlanOpen] = useState(false);
  const [cloudStatus, setCloudStatus] = useState("Pripravljen za sinhronizacijo.");
+ const [installPrompt, setInstallPrompt] = useState(null);
+ const [installed, setInstalled] = useState(() => window.matchMedia?.("(display-mode: standalone)")?.matches || window.navigator.standalone === true);
  const cloudRequestIdRef = useRef(0);
  const cloudWritesInFlightRef = useRef(0);
  const pendingCloudHivesRef = useRef(new Map());
@@ -5917,6 +5932,31 @@ function App() {
   || normalizeSl(session.user?.email?.split("@")[0]) === "beeadmin"
   || normalizeSl(session.user?.user_metadata?.username) === "beeadmin"
  ));
+
+ useEffect(() => {
+  const captureInstallPrompt = (event) => {
+   event.preventDefault();
+   setInstallPrompt(event);
+  };
+  const markInstalled = () => {
+   setInstalled(true);
+   setInstallPrompt(null);
+  };
+  window.addEventListener("beforeinstallprompt", captureInstallPrompt);
+  window.addEventListener("appinstalled", markInstalled);
+  return () => {
+   window.removeEventListener("beforeinstallprompt", captureInstallPrompt);
+   window.removeEventListener("appinstalled", markInstalled);
+  };
+ }, []);
+
+ async function handleInstall() {
+  if (!installPrompt) return;
+  await installPrompt.prompt();
+  const choice = await installPrompt.userChoice;
+  if (choice?.outcome === "accepted") setInstalled(true);
+  setInstallPrompt(null);
+ }
 
  async function refreshCloudNow(statusText = "", showStatus = false) {
   if (mode !== "cloud" || !session) return null;
@@ -6171,7 +6211,12 @@ function App() {
  function handleSignOut() {
   pendingCloudHivesRef.current.clear();
   cloudWritesInFlightRef.current = 0;
+  localStorage.removeItem(SESSION_KEY);
   setSession(null);
+  setProfile(null);
+  setAuth({ name: "", username: "", password: "" });
+  setAuthMessage("");
+  setRegistrationPlanOpen(false);
   setCloudStatus("Odjavljen.");
   setPage("dashboard");
  }
@@ -6883,8 +6928,15 @@ function addFeedingEvent(input) {
   window.scrollTo({ top: 0, behavior: "smooth" });
  }
 
+ const accountName = profile?.full_name
+  || profile?.username
+  || session?.user?.user_metadata?.full_name
+  || session?.user?.user_metadata?.username
+  || session?.user?.email?.split("@")[0]
+  || "";
+
  const screens = {
-  dashboard: () => <Dashboard data={data} openHive={openHive} goTo={setPage} beekeeperName={profile?.full_name || profile?.username || session?.user?.email?.split("@")[0] || "čebelar"} dismissNotification={dismissNotification} />,
+  dashboard: () => <Dashboard data={data} openHive={openHive} goTo={setPage} beekeeperName={accountName || "čebelar"} dismissNotification={dismissNotification} />,
   hive: () => <HiveDetail data={data} hiveId={selectedHiveId} setPage={setPage} startEdit={startEdit} deleteHive={deleteHive} addNoteForHive={addNoteForHive} saveHealthRecord={saveHealthRecord} addHivePhoto={addHivePhoto} deleteHivePhoto={deleteHivePhoto} />,
   calendar: () => <CalendarPage data={data} saveParsedEvent={saveParsedEvent} deleteCalendarEntry={deleteCalendarEntry} setPage={setPage} />,
   qr: () => <QRPage data={data} setData={commitData} openHive={openHive} openInventoryShelf={openInventoryShelf} startHiveWizard={startHiveWizard} setPage={setPage} />,
@@ -6913,8 +6965,8 @@ function addFeedingEvent(input) {
   adminCalendar: () => <AdminSystemCalendarPage data={data} addSystemEvent={addSystemEvent} removeSystemEvent={removeSystemEvent} />,
   adminDebug: () => <DebugPage data={data} />,
   devices: () => <DevicesPage data={data} />,
-  settings: () => <SettingsPage data={data} setData={setData} session={session} onSignOut={handleSignOut} />,
-  debug: () => isAdmin ? <DebugPage data={data} /> : <Dashboard data={data} openHive={openHive} goTo={setPage} beekeeperName={profile?.full_name || profile?.username || "čebelar"} dismissNotification={dismissNotification} />,
+  settings: () => <SettingsPage data={data} setData={setData} session={session} profile={profile} installAvailable={Boolean(installPrompt)} installed={installed} onInstall={handleInstall} onSignOut={handleSignOut} />,
+  debug: () => isAdmin ? <DebugPage data={data} /> : <Dashboard data={data} openHive={openHive} goTo={setPage} beekeeperName={accountName || "čebelar"} dismissNotification={dismissNotification} />,
  };
  const adminPages = new Set(["adminHome", "adminSimulator", "adminUsers", "adminNews", "adminCalendar", "adminDebug"]);
  const activePage = isAdmin && !adminPages.has(page) ? "adminHome" : page;

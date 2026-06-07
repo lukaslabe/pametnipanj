@@ -6,6 +6,7 @@
     <meta name="theme-color" content="#15120c" />
     <meta name="description" content="PametniPanj je preprost slovenski pomočnik za čebelarje: panji, QR sledljivost, opomniki, zdravje, zaloga in bilanca." />
     <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
     <title>PametniPanj</title>
   </head>
   <body>
@@ -46,6 +47,11 @@
             }
           }, 500);
         });
+        if ("serviceWorker" in navigator) {
+          window.addEventListener("load", function () {
+            navigator.serviceWorker.register("/sw.js").catch(function () {});
+          });
+        }
       })();
     </script>
     <script type="module" src="/src/main.jsx"></script>
