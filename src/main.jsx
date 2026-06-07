@@ -4756,8 +4756,14 @@ function SettingsPage({ data, setData, session, profile, installAvailable, insta
 
  return (
   <section>
-   <PageHeader eyebrow="Nastavitve" title="PametniPanj" subtitle="Offline-first: vsi podatki so v localStorage." />
+   <PageHeader eyebrow="Nastavitve" title="PametniPanj" subtitle={session ? "Račun in podatki so povezani s strežnikom." : "Lokalni način brez prijavljenega računa."} />
    <div className="stack">
+    {session ? (
+     <div className="form-card account-settings-card">
+      <div className="card-title"><div><span>Prijavljeni račun</span><h2>{profile?.full_name || profile?.username || session.user?.user_metadata?.username || session.user?.email?.split("@")[0]}</h2></div></div>
+      <button className="secondary-button full-button" type="button" onClick={onSignOut}><LogOut size={20} /> Odjava</button>
+     </div>
+    ) : null}
     <div className="form-card account-settings-card">
      <div className="card-title"><div><span>Aplikacija na telefonu</span><h2>{installed ? "PametniPanj je nameščen" : "Namesti PametniPanj"}</h2></div><Download size={24} /></div>
      {installed ? <p className="subtle">Aplikacijo lahko odpreš neposredno z začetnega zaslona.</p> : installAvailable ? (
@@ -4766,12 +4772,6 @@ function SettingsPage({ data, setData, session, profile, installAvailable, insta
       <p className="subtle">Na Androidu odpri meni brskalnika in izberi »Namesti aplikacijo«. Na iPhonu izberi Deli in nato »Dodaj na začetni zaslon«. Namestitev deluje prek varne povezave pametnipanj.si.</p>
      )}
     </div>
-    {session ? (
-     <div className="form-card account-settings-card">
-      <div className="card-title"><div><span>Prijavljeni račun</span><h2>{profile?.full_name || profile?.username || session.user?.user_metadata?.username || session.user?.email?.split("@")[0]}</h2></div></div>
-      <button className="secondary-button full-button" type="button" onClick={onSignOut}><LogOut size={20} /> Odjava in menjava računa</button>
-     </div>
-    ) : null}
     <div className="form-card">
      <div className="card-title"><div><span>Testiranje naročnin</span><h2>Izbrani paket: {PLAN_OPTIONS[planId].label}</h2></div></div>
      <div className="plan-options">
@@ -5464,6 +5464,18 @@ function AccessPage({ auth, setAuth, message, onSignIn, onSignUp }) {
      <button className="primary-button" type="submit">{registrationMode ? "Ustvari račun" : "Prijava"}</button>
      <button className="secondary-button" type="button" onClick={() => setRegistrationMode((current) => !current)}>{registrationMode ? "Nazaj na prijavo" : "Ustvari nov račun"}</button>
     </form>
+   </section>
+  </div>
+ );
+}
+
+function MissingServerConnectionPage() {
+ return (
+  <div className="access-shell">
+   <section className="access-card">
+    <div className="access-brand"><Hexagon size={34} /><div><strong>PametniPanj</strong><span>Strežniška povezava</span></div></div>
+    <h1>Povezava še ni nastavljena</h1>
+    <p>Ta objavljena različica nima povezave z uporabniškimi računi. Skrbnik mora v gostovanju dodati strežniške nastavitve in ponovno objaviti aplikacijo.</p>
    </section>
   </div>
  );
@@ -6971,6 +6983,10 @@ function addFeedingEvent(input) {
  const adminPages = new Set(["adminHome", "adminSimulator", "adminUsers", "adminNews", "adminCalendar", "adminDebug"]);
  const activePage = isAdmin && !adminPages.has(page) ? "adminHome" : page;
  const renderScreen = screens[activePage] || (isAdmin ? screens.adminHome : screens.dashboard);
+
+ if (import.meta.env.PROD && !supabaseConfigured) {
+  return <MissingServerConnectionPage />;
+ }
 
  if (supabaseConfigured && !session) {
   return <AccessPage auth={auth} setAuth={setAuth} message={authMessage} onSignIn={handleSignIn} onSignUp={handleSignUp} />;
