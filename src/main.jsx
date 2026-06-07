@@ -25,7 +25,9 @@ import {
  HeartPulse,
  Hexagon,
  Image,
+ LayoutDashboard,
  ListPlus,
+ LogOut,
  MapPin,
  Mic,
  Package,
@@ -46,12 +48,24 @@ import {
  Waves,
 } from "lucide-react";
 import "./styles.css";
+import { calculateHiveFood, deriveHiveStatus } from "./utils/hiveStatus";
 import {
  fetchCloudData,
+ fetchProfile,
+ fetchAdminOverview,
+ fetchSystemContent,
  replaceCloudData,
+ refreshSession,
+ resolveCloudAlert,
+ saveCloudNote,
+ deleteSystemContent,
+ saveCloudHive,
+ saveSimulatorReading,
+ saveSystemContent,
  signIn,
  signUp,
  supabaseConfigured,
+ upsertCloudData,
 } from "./supabaseApi";
 
 const STORAGE_KEY = "pametnipanj-local-v1";
@@ -63,6 +77,12 @@ const BEGINNER_PROGRESS_KEY = "pp-beginner-progress";
 const KMG_MID_KEY = "pp-kmg-mid";
 const APIARY_REG_KEY = "pp-apiary-registration";
 const LABEL_RULE_KEY = "pp-nalepke-2026";
+const DISMISSED_NOTIFICATION_KEY = "pp-dismissed-notifications";
+const SEEN_ALERTS_KEY = "pp-seen-alerts";
+const HIVE_DRAFT_KEY = "pp-hive-draft";
+const HIVE_DRAFT_STEP_KEY = "pp-hive-draft-step";
+const SEEN_SYSTEM_CONTENT_KEY = "pp-seen-system-content";
+const FIRST_HIVE_PROMPT_KEY = "pp-first-hive-prompt";
 
 const initialData = {
  hives: [
@@ -81,7 +101,7 @@ const initialData = {
    statusText: "Mirno",
    weightKg: 47.3,
    weeklyDeltaKg: 1.4,
-   foodLiters: 6.4,
+   foodKg: 6.4,
    foodDays: 12,
    temperatureC: 34.2,
    humidityPct: 68,
@@ -113,7 +133,7 @@ const initialData = {
    statusText: "Preveri",
    weightKg: 39.8,
    weeklyDeltaKg: -2.8,
-   foodLiters: 3.1,
+   foodKg: 3.1,
    foodDays: 6,
    temperatureC: 32.9,
    humidityPct: 72,
@@ -145,7 +165,7 @@ const initialData = {
    statusText: "Močan",
    weightKg: 51.8,
    weeklyDeltaKg: 2.1,
-   foodLiters: 9.2,
+   foodKg: 9.2,
    foodDays: 18,
    temperatureC: 34.8,
    humidityPct: 63,
@@ -177,7 +197,7 @@ const initialData = {
    statusText: "Ukrepaj",
    weightKg: 31.4,
    weeklyDeltaKg: -3.6,
-   foodLiters: 1.4,
+   foodKg: 1.4,
    foodDays: 2,
    temperatureC: 30.7,
    humidityPct: 76,
@@ -222,9 +242,9 @@ const initialData = {
   },
  ],
  feedingEvents: [
-  { id: "F-001", hiveId: "BC-2026-001", date: "28. maj", amountLiters: 2.5, feedType: "sirup 1:1", note: "Preventivno po dežju", createdAt: "2026-05-28T14:00:00.000Z" },
-  { id: "F-002", hiveId: "BC-2026-002", date: "29. maj", amountLiters: 3, feedType: "sirup 1:1", note: "Teža pada že tri dni", createdAt: "2026-05-29T13:00:00.000Z" },
-  { id: "F-003", hiveId: "BC-2026-004", date: "danes", amountLiters: 4, feedType: "sirup 1:1", note: "Nujno dopolniti", createdAt: "2026-05-31T12:00:00.000Z" },
+  { id: "F-001", hiveId: "BC-2026-001", date: "28. maj", amountKg: 2.5, feedType: "sirup 1:1", note: "Preventivno po dežju", createdAt: "2026-05-28T14:00:00.000Z" },
+  { id: "F-002", hiveId: "BC-2026-002", date: "29. maj", amountKg: 3, feedType: "sirup 1:1", note: "Teža pada že tri dni", createdAt: "2026-05-29T13:00:00.000Z" },
+  { id: "F-003", hiveId: "BC-2026-004", date: "danes", amountKg: 4, feedType: "sirup 1:1", note: "Nujno dopolniti", createdAt: "2026-05-31T12:00:00.000Z" },
  ],
  extractionEvents: [
   { id: "E-001", hiveId: "BC-2026-003", date: "25. maj", honeyType: "akacija", frames: 12, grossKg: 32.4, emptyKg: 5.1, netKg: 27.3, createdAt: "2026-05-25T16:00:00.000Z" },
@@ -313,11 +333,24 @@ const nav = [
 ];
 
 const AI_API_URL = import.meta.env.VITE_AI_API_URL || "/.netlify/functions/ai";
-const AI_DAILY_LIMIT_KEY = "pametnipanj-ai-daily-limit";
 const AI_USAGE_KEY = "pametnipanj-ai-usage";
-const AI_DEFAULT_DAILY_LIMIT = 20;
+const PLAN_KEY = "pametnipanj-test-plan";
+const PLAN_OPTIONS = {
+ free: { label: "FREE", aiLimit: 3, description: "Dnevnik, koledar in 3 pametni odgovori na dan." },
+ lite: { label: "LITE", aiLimit: 10, description: "Več pametne pomoči in napredni pregledi." },
+ pro: { label: "PRO", aiLimit: 50, description: "Celoten sistem, senzorji in napredne analize." },
+};
+
+function resolvePlanId(value) {
+ const plan = normalizeSl(value || "free");
+ if (plan === "plus" || plan === "premium") return "pro";
+ if (plan === "smart") return "lite";
+ return PLAN_OPTIONS[plan] ? plan : "free";
+}
 
 const localQA = [
+ { keys: ["zascit", "rokavice", "cebelarski klobuk", "mreza za obraz", "obleka za cebele", "obleka za cebelarjenje"], answer: "Da. Pri delu s čebelami je pametno zaščititi obraz in oči s čebelarsko mrežo, posebej pri začetnikih, nemirnih družinah in večjih posegih. Rokavice zmanjšajo pike, vendar so tanjše čebelarske rokavice boljše za občutek pri delu. Nosi zaprto obutev in svetla, gladka oblačila. Če si alergičen na čebelji pik ali po piku težko dihaš, takoj pokliči 112 in upoštevaj zdravnikova navodila." },
+ { keys: ["cebelji pik", "pik cebele", "piki cebel", "alergija", "oteklina", "anafilaksija"], answer: "Po piku čim prej odstrani želo s postrganjem, mesto umij in hladi. Močna oteklina, omotica, težko dihanje ali otekanje jezika in grla so nujni znaki: takoj pokliči 112. Če imaš znano alergijo, ravnaj po navodilih zdravnika in imej predpisano terapijo pri sebi." },
  { keys: ["varoa", "varroa", "pršica"], answer: "Varoa je najpogostejši zajedavec čebel. Stopnjo spremljamo z naravnim osipom ali testom s sladkorjem/alkoholom. Če je osip visok, ukrepaj pravočasno in zapiši zdravljenje." },
  { keys: ["oksalna", "oksalna kislina", "zdravljenje"], answer: "Oksalna kislina je najučinkovitejša, ko je družina brez zalege, navadno pozimi. Uporabljaj zaščito in se drži navodil registriranega pripravka." },
  { keys: ["rojenje", "roj", "matičnik", "maticnik"], answer: "Znaki rojenja so matičniki, gneča pred vhodom, manj prostora in močna družina v sezoni. Najprej preveri prostor, zalego in matičnike." },
@@ -553,6 +586,12 @@ function calendarLabel(date) {
  return new Intl.DateTimeFormat("sl-SI", { day: "numeric", month: "long" }).format(date);
 }
 
+function formatSlovenianDate(value) {
+ const date = value instanceof Date ? value : parseCalendarDate(value) || new Date(value);
+ if (!date || Number.isNaN(date.getTime())) return displayText(value);
+ return new Intl.DateTimeFormat("sl-SI", { day: "numeric", month: "short", year: "numeric" }).format(date).replace(".", "");
+}
+
 function calendarSortValue(item) {
  const parsed = parseCalendarDate(item.date || item.createdAt);
  return parsed ? parsed.getTime() : Number.MAX_SAFE_INTEGER;
@@ -611,7 +650,7 @@ function getHive(hives, hiveId) {
 }
 
 function getHiveName(hives, hiveId) {
- return getHive(hives, hiveId)?.name || "Neznan panj";
+ return hiveId ? getHive(hives, hiveId)?.name || "Neznan panj" : "Splošno";
 }
 
 function isManualHive(hive) {
@@ -661,7 +700,7 @@ function normalizeData(input = {}, persist = false) {
   hives: Array.isArray(data.hives) ? data.hives : [],
   readings: Array.isArray(data.readings) ? data.readings : [],
   notes: Array.isArray(data.notes) ? data.notes : [],
-  feedingEvents: Array.isArray(data.feedingEvents) ? data.feedingEvents : [],
+  feedingEvents: Array.isArray(data.feedingEvents) ? data.feedingEvents.map((event) => ({ ...event, amountKg: event.amountKg ?? event.amountLiters ?? 0 })) : [],
   extractionEvents: Array.isArray(data.extractionEvents) ? data.extractionEvents : [],
   reminders: Array.isArray(data.reminders) ? data.reminders : [],
   qrItems: Array.isArray(data.qrItems) ? data.qrItems : [],
@@ -679,6 +718,7 @@ function normalizeData(input = {}, persist = false) {
   honeySales: Array.isArray(data.honeySales) ? data.honeySales : [],
   censusReports: Array.isArray(data.censusReports) ? data.censusReports : [],
   newsItems: Array.isArray(data.newsItems) ? data.newsItems : [],
+  systemEvents: Array.isArray(data.systemEvents) ? data.systemEvents : [],
   healthRecords: Array.isArray(data.healthRecords) ? data.healthRecords : [],
   hivePhotos: Array.isArray(data.hivePhotos) ? data.hivePhotos : [],
   productEvents: Array.isArray(data.productEvents) ? data.productEvents : [],
@@ -699,7 +739,13 @@ function normalizeData(input = {}, persist = false) {
  ];
  normalized.hives = normalized.hives.map((hive) => {
   const dataSource = hive.dataSource || (hive.deviceId ? "sensor" : "manual");
-  const nextHive = { ...hive, dataSource, hiveType: normalizeHiveType(hive.hiveType) };
+  const nextHive = estimateHiveFood({
+   ...hive,
+   dataSource,
+   hiveType: normalizeHiveType(hive.hiveType),
+   foodKg: hive.foodKg ?? hive.foodLiters ?? null,
+  });
+  delete nextHive.foodLiters;
   if (isManualHive(nextHive)) {
    return {
     ...nextHive,
@@ -707,7 +753,7 @@ function normalizeData(input = {}, persist = false) {
     deviceApiKey: "",
     weightKg: null,
     weeklyDeltaKg: null,
-    foodLiters: null,
+    foodKg: null,
     foodDays: null,
     temperatureC: null,
     humidityPct: null,
@@ -719,6 +765,37 @@ function normalizeData(input = {}, persist = false) {
  });
  if (persist) localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
  return normalized;
+}
+
+function estimateHiveFood(hive, now = Date.now()) {
+ if (isManualHive(hive) || hive.status === "archived" || hive.foodKg === null || hive.foodKg === undefined) return hive;
+ const calculated = calculateHiveFood(hive, new Date(now));
+ const dailyFoodKg = calculated.dailyConsumptionKg;
+ const anchor = new Date(hive.foodEstimateAt || hive.updatedAt || now).getTime();
+ const elapsedDays = Number.isFinite(anchor) ? Math.max(0, (now - anchor) / 86400000) : 0;
+ const foodKg = Math.max(0, Math.round((toNumber(hive.foodKg) - elapsedDays * dailyFoodKg) * 10) / 10);
+ const derived = deriveHiveStatus({ ...hive, foodKg }, new Date(now));
+ return {
+  ...hive,
+  foodKg,
+  foodDays: derived.foodDays,
+  dailyFoodKg,
+  framesOccupied: derived.framesOccupied,
+  colonyStrength: derived.colonyStrength,
+  foodEstimateAt: new Date(now).toISOString(),
+  status: derived.status,
+  statusText: derived.statusText,
+ };
+}
+
+function addFoodToHive(hive, amountKg) {
+ const now = new Date().toISOString();
+ return estimateHiveFood({
+  ...hive,
+  foodKg: Math.round((toNumber(hive.foodKg) + toNumber(amountKg)) * 10) / 10,
+  foodEstimateAt: now,
+  updatedAt: now,
+ }, new Date(now).getTime());
 }
 
 function readLocalDemoData() {
@@ -733,17 +810,166 @@ function readLocalDemoData() {
 
 function usePersistedData() {
  const [data, setDataState] = useState(() => readLocalDemoData());
+ const persist = (next) => {
+  try {
+   localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  } catch (error) {
+   console.warn("Lokalnega predpomnilnika ni bilo mogoče posodobiti.", error);
+  }
+ };
  const setData = (updater) => {
   setDataState((current) => {
    const next = normalizeData(typeof updater === "function" ? updater(current) : updater);
-   localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+   persist(next);
    return next;
   });
  };
  useEffect(() => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  persist(data);
  }, [data]);
  return [data, setData];
+}
+
+async function resizeImageFile(file, maxSize = 960, quality = 0.72) {
+ if (!file?.type?.startsWith("image/")) throw new Error("Izbrana datoteka ni fotografija.");
+ let image;
+ let objectUrl = "";
+ try {
+  if ("createImageBitmap" in window) {
+   try {
+    image = await createImageBitmap(file);
+   } catch {}
+  }
+  if (!image) {
+   objectUrl = URL.createObjectURL(file);
+   image = await new Promise((resolve, reject) => {
+    const fallbackImage = new window.Image();
+    fallbackImage.onload = () => resolve(fallbackImage);
+    fallbackImage.onerror = () => reject(new Error("Slike ni bilo mogoče odpreti."));
+    fallbackImage.src = objectUrl;
+   });
+  }
+  const width = image.width || image.naturalWidth;
+  const height = image.height || image.naturalHeight;
+  const scale = Math.min(1, maxSize / Math.max(width, height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(width * scale));
+  canvas.height = Math.max(1, Math.round(height * scale));
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Fotografije ni bilo mogoče pripraviti.");
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", quality);
+ } finally {
+  if (typeof image?.close === "function") image.close();
+  if (objectUrl) URL.revokeObjectURL(objectUrl);
+ }
+}
+
+function analyzeImageQuality(dataUrl) {
+ return new Promise((resolve) => {
+  const image = new window.Image();
+  image.onerror = () => resolve({ score: 0, blurry: true, dark: false, message: "Fotografije ni bilo mogoče preveriti." });
+  image.onload = () => {
+   const canvas = document.createElement("canvas");
+   const size = 160;
+   canvas.width = size;
+   canvas.height = size;
+   const context = canvas.getContext("2d", { willReadFrequently: true });
+   context.drawImage(image, 0, 0, size, size);
+   const pixels = context.getImageData(0, 0, size, size).data;
+   let brightness = 0;
+   let edgeTotal = 0;
+   let previous = 0;
+   for (let index = 0; index < pixels.length; index += 4) {
+    const gray = pixels[index] * 0.299 + pixels[index + 1] * 0.587 + pixels[index + 2] * 0.114;
+    brightness += gray;
+    if (index > 0) edgeTotal += Math.abs(gray - previous);
+    previous = gray;
+   }
+   const pixelCount = pixels.length / 4;
+   const averageBrightness = brightness / pixelCount;
+   const edgeScore = edgeTotal / pixelCount;
+   const dark = averageBrightness < 45;
+   const blurry = edgeScore < 13;
+   const message = dark
+    ? "Fotografija je precej temna. Za boljšo oceno uporabi več svetlobe."
+    : blurry
+      ? "Fotografija je verjetno motna. Poskusi mirneje in bližje."
+      : "Fotografija je dovolj jasna za osnovni pregled.";
+   resolve({ score: Math.round(edgeScore), brightness: Math.round(averageBrightness), blurry, dark, message });
+  };
+  image.src = dataUrl;
+ });
+}
+
+async function analyzeNotebookPhoto(photo, hive, noteText) {
+ const localWarning = photo.quality?.message || "";
+ try {
+  const response = await fetch(AI_API_URL, {
+   method: "POST",
+   headers: { "Content-Type": "application/json" },
+   body: JSON.stringify({
+    question: noteText || `Opiši fotografijo panja ${hive?.name || ""} in predlagaj, kaj naj čebelar preveri.`,
+    imageDataUrl: photo.url,
+    hives: hive ? [hive] : [],
+   }),
+  });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.message || "Analiza ni dosegljiva.");
+  return [localWarning, payload.answer].filter(Boolean).join(" ");
+ } catch {
+  return `${localWarning} Pametna čebela fotografije trenutno ne more podrobneje pregledati. Zapis bo vseeno shranjen.`.trim();
+ }
+}
+
+function readSeenSystemContent() {
+ try {
+  return new Set(JSON.parse(localStorage.getItem(SEEN_SYSTEM_CONTENT_KEY) || "[]"));
+ } catch {
+  return new Set();
+ }
+}
+
+function rememberSystemContent(ids) {
+ try {
+  localStorage.setItem(SEEN_SYSTEM_CONTENT_KEY, JSON.stringify([...new Set(ids)].slice(-200)));
+ } catch {}
+}
+
+function notifySystemContent(items) {
+ if (!("Notification" in window) || Notification.permission !== "granted") return;
+ items.filter((item) => item.priority === "danger" || item.priority === "warn").forEach((item) => {
+  new Notification(item.title, {
+   body: item.note || item.body || "Nov pomemben dogodek v PametniPanj.",
+   icon: "/icons/icon-192.png",
+   tag: `pametnipanj-${item.id}`,
+  });
+ });
+}
+
+function readStoredIds(key) {
+ try {
+  return new Set(JSON.parse(localStorage.getItem(key) || "[]"));
+ } catch {
+  return new Set();
+ }
+}
+
+function rememberStoredIds(key, ids) {
+ try {
+  localStorage.setItem(key, JSON.stringify([...new Set(ids)].slice(-300)));
+ } catch {}
+}
+
+function notifySensorAlerts(alerts, hives) {
+ if (!("Notification" in window) || Notification.permission !== "granted") return;
+ alerts.forEach((alert) => {
+  new Notification(alert.title, {
+   body: `${getHiveName(hives, alert.hiveId)} · ${alert.message}`,
+   icon: "/icons/icon-192.png",
+   tag: `pametnipanj-alert-${alert.id}`,
+  });
+ });
 }
 
 function freshnessLabel(value) {
@@ -770,7 +996,7 @@ function parseRelativeLastSeen(value) {
 }
 
 function sensorStatusForHive(hive) {
- if (isManualHive(hive)) return { status: "manual", label: "Ročni vnos", detail: "PNV · Ročni vnos", days: 0 };
+ if (isManualHive(hive)) return { status: "manual", label: "Ročni vnos", detail: "Brez senzorja", days: 0 };
  const minutes = hive.updatedAt ? Math.max(0, Math.floor((Date.now() - new Date(hive.updatedAt).getTime()) / 60000)) : parseRelativeLastSeen(hive.lastSeen);
  if (!Number.isFinite(minutes)) return { status: "warn", label: "Senzor neznan", detail: "Ni svežega podatka naprave." };
  const hours = Math.max(1, Math.floor(minutes / 60));
@@ -1086,10 +1312,10 @@ function HiveSelect({ hives, value, onChange }) {
  );
 }
 
-function buildDashboardBriefing(data, hives) {
+function buildDashboardBriefing(data, hives, beekeeperName = "čebelar") {
  const hour = new Date().getHours();
  const greeting = hour < 11 ? "Dobro jutro" : hour < 18 ? "Pozdravljen" : "Dober ve\u010der";
- const name = "Luka";
+ const name = beekeeperName;
  const active = hives.filter((hive) => hive.status !== "archived");
  const urgentHive = active.find((hive) => hive.status === "danger" || (!isManualHive(hive) && toNumber(hive.foodDays) <= 3));
  const warnHive = active.find((hive) => hive.status === "warn" || (!isManualHive(hive) && toNumber(hive.foodDays) <= 7));
@@ -1117,11 +1343,10 @@ function buildDashboardBriefing(data, hives) {
   };
  }
  if (urgentHive) {
-  const reason = !isManualHive(urgentHive) && toNumber(urgentHive.foodDays) <= 3 ? `pomanjkanja hrane (${urgentHive.foodDays} dni)` : "rde\u010dega stanja";
   return {
    tone: "danger",
-   title: `${greeting} ${name}, nujno si vzemi eno uro.`,
-   text: `Obi\u0161\u010di panj ${urgentHive.name} zaradi ${reason}. To je danes pomembnej\u0161e od priprave na medenje.`,
+   title: `${urgentHive.name} potrebuje pozornost.`,
+   text: `${urgentHive.name}: preveri stanje, ko bo primerno.`,
    actionLabel: `Odpri ${urgentHive.name}`,
    hiveId: urgentHive.id,
   };
@@ -1139,8 +1364,8 @@ function buildDashboardBriefing(data, hives) {
  if (warnHive) {
   return {
    tone: "warn",
-   title: `${greeting} ${name}, danes preveri en panj.`,
-   text: `Panj ${warnHive.name} ni kriti\u010den, ampak ga je pametno pogledati pred ostalimi opravili.`,
+   title: `${warnHive.name} je vredno preveriti.`,
+   text: "Kratek pregled bo dovolj.",
    actionLabel: `Odpri ${warnHive.name}`,
    hiveId: warnHive.id,
   };
@@ -1171,11 +1396,14 @@ function buildDashboardBriefing(data, hives) {
   actionPage: "dashboard",
  };
 }
-function Dashboard({ data, openHive, goTo }) {
+function Dashboard({ data, openHive, goTo, beekeeperName, dismissNotification }) {
  const [sortBy, setSortBy] = useState("status");
  const [filterBy, setFilterBy] = useState("all");
  const [notificationsOpen, setNotificationsOpen] = useState(false);
  const [labelBannerOpen, setLabelBannerOpen] = useState(() => localStorage.getItem(LABEL_RULE_KEY) !== "true");
+ const [notificationStatus, setNotificationStatus] = useState(() => !("Notification" in window) ? "unsupported" : Notification.permission);
+ const [dismissedIds, setDismissedIds] = useState(() => readStoredIds(DISMISSED_NOTIFICATION_KEY));
+ const [firstHivePrompt, setFirstHivePrompt] = useState(() => localStorage.getItem(FIRST_HIVE_PROMPT_KEY) !== "dismissed");
  const activeHives = data.hives.filter((hive) => hive.status !== "archived");
  const counts = useMemo(() => ({
   all: activeHives.length,
@@ -1191,39 +1419,63 @@ function Dashboard({ data, openHive, goTo }) {
  const productsThisSeason = seasonHoneyKg + (data.productEvents || []).reduce((sum, event) => sum + (event.unit === "kg" ? toNumber(event.quantity) : toNumber(event.quantity) / 1000), 0);
  const lastVisitMinutes = Math.min(...activeHives.map((hive) => parseRelativeLastSeen(hive.lastSeen)).filter(Number.isFinite));
  const lastVisitLabel = Number.isFinite(lastVisitMinutes) ? (lastVisitMinutes < 60 ? `${lastVisitMinutes} min` : `${Math.floor(lastVisitMinutes / 60)} h`) : "-";
- const briefing = buildDashboardBriefing(data, activeHives);
+ const briefing = buildDashboardBriefing(data, activeHives, beekeeperName);
  const priorityWeather = activeHives
   .map((hive) => ({ hive, weather: getWeatherForHive(data, hive) }))
   .map((entry) => ({ ...entry, status: weatherStatusForHive(entry.hive, entry.weather) }))
   .filter((entry) => entry.status.risk !== "ok")
+  .reduce((items, entry) => {
+   const existing = items.find((item) => item.status.advice === entry.status.advice);
+   if (existing) existing.names.push(entry.hive.name);
+   else items.push({ ...entry, names: [entry.hive.name] });
+   return items;
+  }, [])
   .slice(0, 2);
- const greeting = new Date().getHours() < 11 ? "Dobro jutro" : new Date().getHours() < 18 ? "Pozdravljen" : "Dober večer";
  const notificationItems = [
-  ...(briefing.tone !== "ok" ? [{ id: "briefing", tone: briefing.tone, title: briefing.tone === "danger" ? "Pomembno opozorilo" : "Predlog za pregled", text: briefing.text, hiveId: briefing.hiveId }] : []),
+  ...(briefing.tone !== "ok" ? [{ id: `briefing-${briefing.hiveId || "general"}-${briefing.tone}-${briefing.text}`, tone: briefing.tone, title: briefing.tone === "danger" ? "Pomembno opozorilo" : "Predlog za pregled", text: briefing.text, hiveId: briefing.hiveId }] : []),
+  ...(data.systemEvents || []).slice(0, 5).map((item) => ({ id: item.id, tone: item.priority || "ok", title: item.title, text: `${formatSlovenianDate(item.date)} · ${item.note || item.body || "Sistemski dogodek"}`, hiveId: "" })),
+  ...(data.newsItems || []).slice(0, 3).map((item) => ({ id: item.id, tone: item.priority || "ok", title: item.title, text: item.body || "Nova sistemska novica.", hiveId: "" })),
   ...(data.alerts || []).filter((alert) => !alert.resolved).slice(0, 4).map((alert) => ({ id: alert.id, tone: alert.severity || "warn", title: alert.title, text: `${getHiveName(data.hives, alert.hiveId)} · ${alert.message}`, hiveId: alert.hiveId })),
-  ...data.reminders.slice(0, 3).map((reminder) => ({ id: reminder.id, tone: reminder.priority || "ok", title: reminder.title, text: `${getHiveName(data.hives, reminder.hiveId)} · ${reminder.date}`, hiveId: reminder.hiveId })),
- ];
+  ...data.reminders.slice(0, 3).map((reminder) => ({ id: reminder.id, tone: reminder.priority || "ok", title: reminder.title, text: `${getHiveName(data.hives, reminder.hiveId)} · ${formatSlovenianDate(reminder.date)}`, hiveId: reminder.hiveId })),
+ ].filter((item) => !dismissedIds.has(item.id));
  const urgentCount = notificationItems.filter((item) => item.tone === "danger" || item.tone === "warn").length;
- const upcomingDashboardItems = [...getLegalReminders(), ...data.reminders]
+ const upcomingDashboardItems = [...getLegalReminders(), ...(data.systemEvents || []), ...data.reminders]
   .sort((a, b) => calendarSortValue(a) - calendarSortValue(b))
   .slice(0, 3);
+
+ async function enableNotifications() {
+  if (!("Notification" in window) || !window.isSecureContext) {
+   setNotificationStatus("unsupported");
+   return;
+  }
+  const permission = await Notification.requestPermission();
+  setNotificationStatus(permission);
+  if (permission === "granted") {
+   new Notification("PametniPanj obvestila so vključena", { body: "Pomembni sistemski dogodki bodo prikazani na tej napravi." });
+  }
+ }
+
+ function dismiss(item) {
+  const next = new Set(dismissedIds);
+  next.add(item.id);
+  setDismissedIds(next);
+  rememberStoredIds(DISMISSED_NOTIFICATION_KEY, next);
+  dismissNotification(item);
+ }
 
  return (
   <section>
    <div className="hero compact-hero hero-calm">
-    <div className="hero-tools">
-     <button className="hero-bell-button" type="button" onClick={() => setNotificationsOpen(true)} aria-label="Obvestila">
-      <Bell size={23} />
-      {urgentCount ? <span>{urgentCount}</span> : null}
-     </button>
-     <button className="hero-settings-button" type="button" onClick={() => goTo("settings")} aria-label="Nastavitve">
-      <Settings size={19} />
-     </button>
-    </div>
-    <div className="hero-copy">
-     <p className="eyebrow">PametniPanj</p>
-     <h1>{greeting}, Čebelar Luka.</h1>
-     <p>{briefing.tone === "ok" ? "Danes ni posebnosti. Sprosti se." : briefing.text}</p>
+    <div className="hero-heading-row">
+     <div className="hero-copy">
+      <p className="eyebrow">PametniPanj</p>
+      <h1>Čebelari z nami, {beekeeperName.length > 20 ? `${beekeeperName.slice(0, 20)}...` : beekeeperName}.</h1>
+      <p>{briefing.tone === "ok" ? "Vse mirno. Lep dan za pregled." : briefing.title}</p>
+     </div>
+     <div className="hero-tools">
+      <button className="hero-bell-button" type="button" onClick={() => setNotificationsOpen(true)} aria-label="Obvestila"><Bell size={26} />{urgentCount ? <span>{urgentCount}</span> : null}</button>
+      <button className="hero-settings-button" type="button" onClick={() => goTo("settings")} aria-label="Nastavitve"><Settings size={22} /></button>
+     </div>
     </div>
     <div className="summary-strip">
      <div><strong>{counts.all}</strong><span>panjev</span></div>
@@ -1231,22 +1483,30 @@ function Dashboard({ data, openHive, goTo }) {
      <div><strong>{counts.attention}</strong><span>za pregled</span></div>
     </div>
    </div>
-
+   {!activeHives.length && firstHivePrompt ? <div className="first-hive-prompt"><BeeAIIcon size={30} /><div><strong>Dodaj svoj prvi panj</strong><span>Začni z dodajanjem panja, da boš videl podatke, vreme in napotke.</span></div><div><button className="primary-button" onClick={() => goTo("create")}><Plus size={18} /> Dodaj panj</button><button className="text-button" onClick={() => { localStorage.setItem(FIRST_HIVE_PROMPT_KEY, "dismissed"); setFirstHivePrompt(false); }}>Pozneje →</button></div></div> : null}
    {notificationsOpen ? (
-    <div className="modal-backdrop">
-     <div className="modal-card">
+    <div className="modal-backdrop" onClick={() => setNotificationsOpen(false)}>
+     <div className="modal-card bottom-sheet" onClick={(event) => event.stopPropagation()}>
+      <div className="sheet-handle" />
       <div className="card-title">
        <h2>Obvestila</h2>
        <button className="text-button" onClick={() => setNotificationsOpen(false)}>Zapri</button>
       </div>
       <div className="stack">
        {notificationItems.length ? notificationItems.map((item) => (
-        <button className={`notification-row notification-${item.tone}`} key={item.id} onClick={() => { setNotificationsOpen(false); item.hiveId ? openHive(item.hiveId) : goTo("calendar"); }}>
-         <Bell size={22} />
-         <div><strong>{item.title}</strong><span>{item.text}</span></div>
-        </button>
+        <article className={`notification-row notification-${item.tone}`} key={item.id}>
+         <button className="notification-open" type="button" onClick={() => { setNotificationsOpen(false); item.hiveId ? openHive(item.hiveId) : goTo("calendar"); }}>
+          <Bell size={22} />
+          <div><strong>{item.title}</strong><span>{item.text}</span></div>
+         </button>
+         <button className="notification-dismiss" type="button" onClick={() => dismiss(item)}>Prezri</button>
+        </article>
        )) : <p className="empty">Ni novih obvestil.</p>}
       </div>
+      {notificationStatus !== "granted" ? (
+       <button className="primary-button full-button" type="button" onClick={enableNotifications}>Vključi obvestila na napravi</button>
+      ) : <p className="success-text">Obvestila na tej napravi so vključena.</p>}
+      {notificationStatus === "unsupported" ? <p className="warning-text">Obvestila potrebujejo varno HTTPS povezavo. Lokalni naslov na telefonu jih lahko blokira.</p> : null}
      </div>
     </div>
    ) : null}
@@ -1298,9 +1558,7 @@ function Dashboard({ data, openHive, goTo }) {
         <StatusBadge status={hive.status}>{hive.statusText}</StatusBadge>
        </div>
        <div className="hive-stats">
-        <span>{isManualHive(hive) ? "PNV" : `${hive.foodDays} dni hrane`}</span>
-        <span className={`sensor-chip sensor-${sensor.status}`}>{sensor.label}</span>
-        {sensor.status !== "ok" ? <span className={`sensor-chip sensor-${sensor.status}`}>{sensor.detail}</span> : null}
+        {isManualHive(hive) ? <span className="sensor-chip sensor-manual">Ročni vnos</span> : <><span>{hive.foodDays} dni hrane</span><span className={`sensor-chip sensor-${sensor.status}`}>{sensor.label}</span>{sensor.status !== "ok" ? <span className={`sensor-chip sensor-${sensor.status}`}>{sensor.detail}</span> : null}</>}
        </div>
        {(sensor.status === "danger" || sensor.status === "stale") ? (
         <div className={`sensor-banner sensor-banner-${sensor.status}`}>
@@ -1314,24 +1572,6 @@ function Dashboard({ data, openHive, goTo }) {
    })}
    </div>
 
-   {priorityWeather.length ? (
-    <div className="card weather-overview priority-weather">
-     <div className="card-title">
-      <h2>Vremenski napotki</h2>
-      <button className="text-button" onClick={() => goTo("weather")}>Odpri</button>
-     </div>
-     <div className="weather-strip">
-      {priorityWeather.map(({ hive, weather, status }) => (
-       <button className={`weather-chip weather-${status.risk}`} key={hive.id} onClick={() => openHive(hive.id)}>
-        <strong>{hive.name}</strong>
-        <span>{status.text}</span>
-        <small>{status.advice}</small>
-       </button>
-      ))}
-     </div>
-    </div>
-   ) : null}
-
    <div className="quick-grid dashboard-actions">
     <button onClick={() => goTo("create")}><Plus size={20} /> Dodaj panj</button>
     <button onClick={() => goTo("feeding")}><Utensils size={20} /> Hranjenje</button>
@@ -1340,6 +1580,15 @@ function Dashboard({ data, openHive, goTo }) {
     <button onClick={() => goTo("weather")}><CloudSun size={20} /> Vreme</button>
     <button onClick={() => goTo("more")}><Settings size={20} /> Orodja</button>
    </div>
+
+   {priorityWeather.length ? (
+    <div className="card weather-overview priority-weather">
+     <div className="card-title"><h2>Vremenski napotki</h2><button className="text-button" onClick={() => goTo("weather")}>Odpri</button></div>
+     <div className="weather-strip">
+      {priorityWeather.map(({ hive, names, status }) => <button className={`weather-chip weather-${status.risk}`} key={names.join("-")} onClick={() => openHive(hive.id)}><strong>{names.join(", ")}</strong><span>{status.text}</span><small>{status.advice}</small></button>)}
+     </div>
+    </div>
+   ) : null}
 
    <h2 className="section-title">Prihaja</h2>
    <div className="stack">
@@ -1477,8 +1726,9 @@ function HealthPanel({ hive, data, saveHealthRecord }) {
     <button className="primary-button" type="submit"><ShieldAlert size={20} /> Shrani zdravje</button>
    </form>
    {showNeighbor ? (
-    <div className="modal-backdrop">
-     <div className="modal-card">
+    <div className="modal-backdrop" onClick={() => setShowNeighbor(false)}>
+     <div className="modal-card bottom-sheet" onClick={(event) => event.stopPropagation()}>
+      <div className="sheet-handle" />
       <div className="card-title"><h2>Anonimno opozorilo</h2><button className="text-button" onClick={() => setShowNeighbor(false)}>Zapri</button></div>
       <p className="subtle">Ali želite anonimno opozoriti sosednje čebelarje Ime in točna lokacija se nikoli ne prikažeta.</p>
       <label>Območje<select value={form.neighborAlert.radiusKm || 10} onChange={(event) => setForm((current) => ({ ...current, neighborAlert: { ...(current.neighborAlert || {}), radiusKm: Number(event.target.value), sent: true, area: "Savinjska dolina" } }))}><option value={5}>5 km</option><option value={10}>10 km</option><option value={20}>20 km</option></select></label>
@@ -1488,7 +1738,7 @@ function HealthPanel({ hive, data, saveHealthRecord }) {
     </div>
    ) : null}
    <div className="stack">
-    {(data.healthRecords || []).filter((record) => record.hiveId === hive.id).map((record) => <EventCard key={record.id} icon={ShieldAlert} title={`Varoja ${record.varroaLevel}/5 · matica ${record.queenStatus}`} subtitle={`${record.inspectionDate} · ${record.treatment} · ${(record.diseases || []).join(", ")}`} />)}
+    {(data.healthRecords || []).filter((record) => record.hiveId === hive.id).map((record) => <EventCard key={record.id} icon={ShieldAlert} title={`Varoja ${record.varroaLevel}/5 · matica ${record.queenStatus}`} subtitle={`${formatSlovenianDate(record.inspectionDate)} · ${record.treatment} · ${(record.diseases || []).join(", ")}`} />)}
    </div>
   </div>
  );
@@ -1538,7 +1788,7 @@ function PhotoPanel({ hive, photos, addHivePhoto, deleteHivePhoto }) {
     {photos.map((photo) => (
      <button key={photo.id} className="photo-thumb" onClick={() => setSelected(photo)}>
       {photo.url ? <img src={photo.url} alt={photo.caption || "Fotografija panja"} /> : <Image size={36} />}
-      <span>{photo.date}</span>
+      <span>{formatSlovenianDate(photo.date)}</span>
      </button>
     ))}
    </div>
@@ -1547,7 +1797,7 @@ function PhotoPanel({ hive, photos, addHivePhoto, deleteHivePhoto }) {
      <div className="modal-card">
       <div className="card-title"><h2>{selected.caption || "Fotografija"}</h2><button className="text-button" onClick={() => setSelected(null)}>Zapri</button></div>
       {selected.url ? <img className="photo-large" src={selected.url} alt={selected.caption || "Fotografija panja"} /> : <div className="photo-large placeholder"><Image size={54} /></div>}
-      <p className="subtle">{selected.date} · {selected.sizeMb || 0} MB</p>
+      <p className="subtle">{formatSlovenianDate(selected.date)} · {selected.sizeMb || 0} MB</p>
     <button className="secondary-button" onClick={() => addHivePhoto({ hiveId: hive.id, caption: selected.caption, url: selected.url, sizeMb: selected.sizeMb, aiAnalysis: "Leglo izgleda zdravo in enakomerno. Matice na tej fotografiji ni mogoče zanesljivo potrditi. Priporočam pregled v naslednjih 7 dneh." })}>Naj pogleda Pametna čebela</button>
       {selected.aiAnalysis ? <p className="success-text">{selected.aiAnalysis}</p> : null}
       <button className="danger-button" onClick={() => { deleteHivePhoto(selected.id); setSelected(null); }}>Izbriši fotografijo</button>
@@ -1560,6 +1810,20 @@ function PhotoPanel({ hive, photos, addHivePhoto, deleteHivePhoto }) {
 
 function HiveDetail({ data, hiveId, setPage, startEdit, deleteHive, addNoteForHive, saveHealthRecord, addHivePhoto, deleteHivePhoto }) {
  const hive = getHive(data.hives, hiveId);
+ const [detailTab, setDetailTab] = useState("pregled");
+ const [menuOpen, setMenuOpen] = useState(false);
+ const [sensorModalOpen, setSensorModalOpen] = useState(false);
+ if (!hive) {
+  return (
+   <section>
+    <PageHeader eyebrow="Panj" title="Panj ni izbran" subtitle="Najprej dodaj panj ali ga izberi na seznamu." />
+    <div className="empty">Za prikaz podrobnosti mora biti izbran panj.</div>
+    <button className="primary-button full-button" type="button" onClick={() => setPage(data.hives.length ? "dashboard" : "create")}>
+     {data.hives.length ? "Nazaj na panje" : "Dodaj prvi panj"}
+    </button>
+   </section>
+  );
+ }
  const hiveReadings = data.readings.filter((reading) => reading.hiveId === hive.id);
  const hiveReminders = data.reminders.filter((reminder) => reminder.hiveId === hive.id);
  const timeline = buildTimeline(data, hive.id);
@@ -1568,9 +1832,6 @@ function HiveDetail({ data, hiveId, setPage, startEdit, deleteHive, addNoteForHi
  const pasture = getPastureForHive(hive);
  const sensor = sensorStatusForHive(hive);
  const manualHive = isManualHive(hive);
- const [detailTab, setDetailTab] = useState("pregled");
- const [menuOpen, setMenuOpen] = useState(false);
- const [sensorModalOpen, setSensorModalOpen] = useState(false);
 
  return (
   <section>
@@ -1701,6 +1962,17 @@ function HiveDetail({ data, hiveId, setPage, startEdit, deleteHive, addNoteForHi
     </div>
     </>
     )}
+   </details>
+
+   <details className="details-card">
+    <summary>⚙️ Parametri panja</summary>
+    <div className="detail-grid">
+     <Metric icon={ClipboardList} label="Zasedeni satovi" value={hive.framesOccupied ?? hive.frameCount ?? 10} />
+     <Metric icon={Activity} label="Moč družine" value={({ weak: "Šibka", normal: "Normalna", strong: "Močna" })[hive.colonyStrength || "normal"]} />
+     <Metric icon={Utensils} label="Zaloga hrane" value={`${hive.foodKg ?? 0} kg`} />
+     <Metric icon={CalendarDays} label="Zadnje hranjenje" value={hive.lastFeedingDate ? formatSlovenianDate(hive.lastFeedingDate) : "Ni vpisano"} />
+     <Metric icon={Gauge} label="Ocenjena poraba" value={`${calculateHiveFood(hive).dailyConsumptionKg} kg/dan`} />
+    </div>
    </details>
 
    <div className="card">
@@ -1919,7 +2191,7 @@ function buildTimeline(data, hiveId) {
   ...data.feedingEvents.filter((event) => event.hiveId === hiveId).map((event) => ({
    id: event.id,
    type: "Hranjenje",
-   title: `${event.amountLiters} L · ${event.feedType}`,
+   title: `${event.amountKg ?? event.amountLiters} kg · ${event.feedType}`,
    subtitle: event.note,
    date: event.date,
    createdAt: event.createdAt,
@@ -2000,7 +2272,7 @@ function actionTypeLabel(type) {
   storage_note: "Skladiščenje",
   general_note: "Splošna nota",
  };
- return labels[type] || "Dogodek";
+ return labels[type] || "Splošni čebelarski zapis";
 }
 
 function TimelineItem({ item }) {
@@ -2008,7 +2280,7 @@ function TimelineItem({ item }) {
   <article className="timeline-item">
    <div className="timeline-dot" />
    <div>
-    <span>{item.type} · {item.date}</span>
+    <span>{item.type} · {formatSlovenianDate(item.date)}</span>
     <strong>{item.title}</strong>
     <p>{item.subtitle}</p>
    </div>
@@ -2030,9 +2302,9 @@ function CalendarPage({ data, saveParsedEvent, deleteCalendarEntry, setPage }) {
  const firstWeekday = (new Date(monthYear.year, monthYear.month, 1).getDay() + 6) % 7;
  const days = Array.from({ length: daysInMonth }, (_, index) => index + 1);
  const blanks = Array.from({ length: firstWeekday }, (_, index) => index);
- const allReminders = [...getLegalReminders(), ...data.reminders].sort((a, b) => calendarSortValue(a) - calendarSortValue(b));
+ const allReminders = [...getLegalReminders(), ...(data.systemEvents || []), ...data.reminders].sort((a, b) => calendarSortValue(a) - calendarSortValue(b));
  const calendarItems = [
-  ...allReminders.map((item) => ({ ...item, kind: "reminder" })),
+  ...allReminders.map((item) => ({ ...item, kind: (data.systemEvents || []).some((event) => event.id === item.id) ? "system" : "reminder" })),
   ...(data.events || []).filter((event) => event.source === "manual" && event.status !== "archived").map((item) => ({ ...item, kind: "event" })),
  ].map((item) => ({ ...item, parsedDate: parseCalendarDate(item.date, monthYear.year) }))
   .filter((item) => item.parsedDate)
@@ -2150,8 +2422,8 @@ function CalendarEntryRow({ item, hives, kind, onDelete }) {
  const structuredData = item.structuredData || {};
  const title = kind === "reminder" ? item.title : (structuredData.title || actionTypeLabel(item.type));
  const subtitle = kind === "reminder"
-  ? getHiveName(hives, item.hiveId) + " · " + item.date + " · " + item.time
-  : getHiveName(hives, item.hiveId) + " · " + item.date + " · " + (structuredData.note || item.originalText || "");
+  ? getHiveName(hives, item.hiveId) + " · " + formatSlovenianDate(item.date) + " · " + item.time
+  : getHiveName(hives, item.hiveId) + " · " + formatSlovenianDate(item.date) + " · " + (structuredData.note || item.originalText || "");
  const hasDetails = Boolean(item.audience || item.instructions?.length || item.sourceUrl);
 
  return (
@@ -2178,15 +2450,17 @@ function CalendarEntryRow({ item, hives, kind, onDelete }) {
      </details>
     ) : null}
    </div>
-   {!item.legal ? <button className="icon-button small-icon-button" type="button" onClick={() => onDelete(item.id, kind)} aria-label="Izbriši dogodek"><Trash2 size={18} /></button> : null}
+   {!item.legal && kind !== "system" ? <button className="icon-button small-icon-button" type="button" onClick={() => onDelete(item.id, kind)} aria-label="Izbriši dogodek"><Trash2 size={18} /></button> : null}
   </article>
  );
 }
 
-function QRPage({ data, setData, openHive, openInventoryShelf, startHiveWizard }) {
+function QRPage({ data, setData, openHive, openInventoryShelf, startHiveWizard, setPage }) {
  const [qrCode, setQrCode] = useState("");
  const [message, setMessage] = useState("");
  const [selectedQr, setSelectedQr] = useState(null);
+ const [qrAction, setQrAction] = useState("");
+ const [qrActionForm, setQrActionForm] = useState({ date: todayLabel(), amount: "", type: "", notes: "", queenSeen: "da", brood: "mirna", rating: "4", hiveId: "" });
  const [newQrName, setNewQrName] = useState("Regal A1");
  const [newQrType, setNewQrType] = useState("Regal");
  const [isScanning, setIsScanning] = useState(false);
@@ -2195,6 +2469,7 @@ function QRPage({ data, setData, openHive, openInventoryShelf, startHiveWizard }
  const canvasRef = useRef(null);
  const streamRef = useRef(null);
  const scanTimerRef = useRef(null);
+ const sheetTouchYRef = useRef(0);
 
  useEffect(() => () => stopQrScan(), []);
 
@@ -2221,13 +2496,13 @@ function QRPage({ data, setData, openHive, openInventoryShelf, startHiveWizard }
     }),
    }));
    setMessage(source === "camera" ? `Kamera je na\u0161la panj ${hive.name}.` : "");
-   openHive(hive.id);
+   setSelectedQr({ id: cleanCode, type: "Panj", linkedHiveId: hive.id, linkedTo: hive.name, location: hive.location, status: "Aktivno" });
    return;
   }
 
   if (existing?.linkedHiveId) {
    setMessage(source === "camera" ? `Kamera je na\u0161la ${existing.linkedTo}.` : "");
-   openHive(existing.linkedHiveId);
+   setSelectedQr(existing);
    return;
   }
 
@@ -2241,9 +2516,9 @@ function QRPage({ data, setData, openHive, openInventoryShelf, startHiveWizard }
   }
 
   if (normalizeSl(inferred.type).includes("panj")) {
-   setMessage(`QR ${cleanCode} je nov. Odpiram dodajanje panja.`);
+   setMessage(`QR ${cleanCode} še ni povezan s panjem.`);
    setQrCode("");
-   if (startHiveWizard) startHiveWizard(cleanCode, { name: inferred.suggestedName, location: "", qrCode: cleanCode });
+   setSelectedQr({ id: cleanCode, type: "Panj", linkedHiveId: "", linkedTo: inferred.suggestedName, status: "Novo" });
    return;
   }
 
@@ -2278,6 +2553,88 @@ function QRPage({ data, setData, openHive, openInventoryShelf, startHiveWizard }
   setData((current) => ({ ...current, qrItems: upsertQr(current.qrItems, item) }));
   setSelectedQr(item);
   setMessage(`QR za ${cleanName} je pripravljen za tisk.`);
+ }
+
+ function beginQrAction(action) {
+  setQrAction(action);
+  setQrActionForm({
+   date: todayLabel(),
+   amount: "",
+   type: action === "Hranjenje" ? "Sirup 1:1" : action === "Varoa" ? "Naravni osip" : "",
+   notes: "",
+   queenSeen: "da",
+   brood: "mirna",
+   rating: "4",
+   hiveId: data.hives[0]?.id || "",
+  });
+ }
+
+ function saveQrAction(event) {
+  event.preventDefault();
+  if (!selectedQr || !qrAction) return;
+  if (qrAction === "Poveži napravo") {
+   if (!qrActionForm.hiveId) return;
+   const linkedHive = getHive(data.hives, qrActionForm.hiveId);
+   setData((current) => ({
+    ...current,
+    qrItems: upsertQr(current.qrItems || [], { ...selectedQr, linkedHiveId: qrActionForm.hiveId, linkedTo: linkedHive.name, status: "Aktivno" }),
+   }));
+   setMessage(`Naprava je povezana s panjem ${linkedHive.name}.`);
+   setQrAction("");
+   setSelectedQr(null);
+   return;
+  }
+  if (!selectedQr.linkedHiveId) return;
+  const hiveId = selectedQr.linkedHiveId;
+  const amount = Math.max(0, toNumber(qrActionForm.amount));
+  const noteText = qrActionForm.notes.trim() || `${qrAction} je zabeležen prek QR kode.`;
+  const structuredData = {
+   action: qrAction,
+   type: qrActionForm.type,
+   amount,
+   queenSeen: qrActionForm.queenSeen,
+   brood: qrActionForm.brood,
+   rating: toNumber(qrActionForm.rating),
+  };
+  setData((current) => {
+   const note = {
+    id: makeId("QR-NOTE"),
+    hiveId,
+    title: qrAction,
+    text: noteText,
+    date: qrActionForm.date,
+    originalText: noteText,
+    structuredData,
+    createdAt: new Date().toISOString(),
+   };
+   const next = { ...current, notes: [note, ...(current.notes || [])] };
+   if (qrAction === "Hranjenje") {
+    next.feedingEvents = [{
+     id: makeId("FEED"),
+     hiveId,
+     date: qrActionForm.date,
+     amountKg: amount,
+     feedType: qrActionForm.type || "Sirup 1:1",
+     note: noteText,
+     createdAt: new Date().toISOString(),
+    }, ...(current.feedingEvents || [])];
+    next.hives = current.hives.map((hive) => hive.id === hiveId ? addFoodToHive(hive, amount) : hive);
+   }
+   if (qrAction === "Cvetni prah") {
+    next.pollenEvents = [{
+     id: makeId("POLLEN"),
+     hiveId,
+     date: qrActionForm.date,
+     amountKg: amount,
+     notes: noteText,
+     createdAt: new Date().toISOString(),
+    }, ...(current.pollenEvents || [])];
+   }
+   return next;
+  });
+  setMessage(`${qrAction} je shranjen v časovnico panja.`);
+  setQrAction("");
+  setSelectedQr(null);
  }
 
  function downloadQrPng(item) {
@@ -2435,12 +2792,31 @@ function QRPage({ data, setData, openHive, openInventoryShelf, startHiveWizard }
     ))}
    </div>
    {selectedQr ? (
-    <div className="modal-backdrop">
-     <div className="modal-card">
+    <div className="modal-backdrop" onClick={() => { setQrAction(""); setSelectedQr(null); }}>
+     <div className="modal-card bottom-sheet" onClick={(event) => event.stopPropagation()} onTouchStart={(event) => { sheetTouchYRef.current = event.touches[0]?.clientY || 0; }} onTouchEnd={(event) => { if ((event.changedTouches[0]?.clientY || 0) - sheetTouchYRef.current > 80) { setQrAction(""); setSelectedQr(null); } }}>
+      <div className="sheet-handle" />
       <div className="card-title">
        <h2>{selectedQr.id}</h2>
-       <button className="text-button" onClick={() => setSelectedQr(null)}>Zapri</button>
+       <button className="text-button" onClick={() => { setQrAction(""); setSelectedQr(null); }}>Zapri</button>
       </div>
+      {qrAction ? (
+       <form className="qr-action-form" onSubmit={saveQrAction}>
+        <div className="card-title"><h2>{qrAction}</h2><span>{selectedQr.linkedTo}</span></div>
+        <label>Datum<input type="date" value={qrActionForm.date} onChange={(event) => setQrActionForm((current) => ({ ...current, date: event.target.value }))} /></label>
+        {qrAction === "Pregled" ? <><label>Matica videna<select value={qrActionForm.queenSeen} onChange={(event) => setQrActionForm((current) => ({ ...current, queenSeen: event.target.value }))}><option value="da">Da</option><option value="ne">Ne</option></select></label><label>Zalega<select value={qrActionForm.brood} onChange={(event) => setQrActionForm((current) => ({ ...current, brood: event.target.value }))}><option value="mirna">Mirna</option><option value="nemirna">Nemirna</option><option value="ni">Ni zalege</option></select></label><label>Ocena 1-5<input type="number" min="1" max="5" value={qrActionForm.rating} onChange={(event) => setQrActionForm((current) => ({ ...current, rating: event.target.value }))} /></label></> : null}
+        {["Hranjenje", "Cvetni prah", "Varoa"].includes(qrAction) ? <label>Količina {qrAction === "Varoa" ? "varoj / 100 čebel" : "kg"}<input type="number" min="0" step="0.1" value={qrActionForm.amount} onChange={(event) => setQrActionForm((current) => ({ ...current, amount: event.target.value }))} /></label> : null}
+        {qrAction === "Hranjenje" ? <label>Tip<select value={qrActionForm.type} onChange={(event) => setQrActionForm((current) => ({ ...current, type: event.target.value }))}><option>Sirup 1:1</option><option>Sirup 2:1</option><option>Pogača</option></select></label> : null}
+        {qrAction === "Varoa" ? <label>Metoda<select value={qrActionForm.type} onChange={(event) => setQrActionForm((current) => ({ ...current, type: event.target.value }))}><option>Naravni osip</option><option>Alkoholni test</option></select></label> : null}
+        {qrAction === "Sum na bolezen" ? <label>Tip suma<select value={qrActionForm.type} onChange={(event) => setQrActionForm((current) => ({ ...current, type: event.target.value }))}><option>APG</option><option>Nosema</option><option>Drugo</option></select></label> : null}
+        {qrAction === "Zdravljenje" ? <label>Zdravilo in doza<input value={qrActionForm.type} onChange={(event) => setQrActionForm((current) => ({ ...current, type: event.target.value }))} placeholder="npr. mravljična kislina, 30 ml" /></label> : null}
+        {qrAction === "Poveži napravo" ? <label>Izberi panj<select value={qrActionForm.hiveId} onChange={(event) => setQrActionForm((current) => ({ ...current, hiveId: event.target.value }))}>{data.hives.map((hive) => <option key={hive.id} value={hive.id}>{hive.name}</option>)}</select></label> : null}
+        {qrAction !== "Poveži napravo" ? <label>Opombe<textarea value={qrActionForm.notes} onChange={(event) => setQrActionForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Kaj si opazil ali naredil" /></label> : null}
+        <button className="primary-button full-button" type="submit">{qrAction === "Poveži napravo" ? "Poveži napravo" : "Shrani v časovnico"}</button>
+        <button className="text-button full-button" type="button" onClick={() => setQrAction("")}>Nazaj na akcije</button>
+       </form>
+      ) : null}
+      {selectedQr.status === "Novo" && normalizeSl(selectedQr.type).includes("panj") ? <div className="suggestion-box"><strong>Ta panj ni v tvojem sistemu.</strong><span>QR kodo lahko uporabiš pri dodajanju novega panja.</span><button className="primary-button full-button" onClick={() => { startHiveWizard(selectedQr.id, { name: selectedQr.linkedTo, qrCode: selectedQr.id }); setSelectedQr(null); }}>Dodaj ta panj</button></div> : null}
+      <details className="inline-details"><summary>QR kartica in izvoz</summary>
       <div className="qr-print-card">
        <strong>PametniPanj</strong>
        <img src={qrImageUrl(selectedQr.id, 220)} alt={`QR ${selectedQr.id}`} />
@@ -2448,6 +2824,7 @@ function QRPage({ data, setData, openHive, openInventoryShelf, startHiveWizard }
        <small>{selectedQr.id}</small>
        <button className="secondary-button" type="button" onClick={() => downloadQrPng(selectedQr)}><Download size={18} /> Prenesi PNG</button>
       </div>
+      </details>
       {normalizeSl(selectedQr.type).includes("regal") ? (
        <div className="shelf-preview">
         <strong>Vsebina regala</strong>
@@ -2456,10 +2833,23 @@ function QRPage({ data, setData, openHive, openInventoryShelf, startHiveWizard }
         ) : <span>Regal je še prazen.</span>}
        </div>
       ) : null}
-      <div className="action-menu">
+      {!qrAction ? <div className="action-menu">
        {qrActionsFor(selectedQr).map((action) => (
         <button key={action} onClick={() => {
+         if (selectedQr.linkedHiveId && ["Pregled", "Cvetni prah", "Hranjenje", "Varoa", "Rojenje", "Sum na bolezen", "Zdravljenje"].includes(action)) {
+          beginQrAction(action);
+          return;
+         }
          if (action === "Odpri panj" && selectedQr.linkedHiveId) openHive(selectedQr.linkedHiveId);
+         if (action === "Hranjenje") setPage("feeding");
+         if (action === "Cvetni prah") setPage("pollen");
+         if (action === "Zapiski") setPage("voice");
+         if (action === "Tehtanje panjev") setPage("pocketScale");
+         if (action === "Kopiraj vsebino") navigator.clipboard?.writeText(selectedQr.id);
+         if (action === "Poveži s panjem" && (normalizeSl(selectedQr.type).includes("naprav") || normalizeSl(selectedQr.type).includes("device") || normalizeSl(selectedQr.type).includes("senzor"))) {
+          beginQrAction("Poveži napravo");
+          return;
+         }
          if (action === "Odpri skladišče" && openInventoryShelf) openInventoryShelf(selectedQr.linkedTo || selectedQr.id);
          if (action === "Dodaj zalogo" && openInventoryShelf) openInventoryShelf(selectedQr.linkedTo || selectedQr.id, "add", { name: "Sladkor", category: "Sladkor", quantity: 400, unit: "kg" });
          if (action === "Vzemi zalogo" && openInventoryShelf) openInventoryShelf(selectedQr.linkedTo || selectedQr.id, "remove", { quantity: 1 });
@@ -2467,7 +2857,7 @@ function QRPage({ data, setData, openHive, openInventoryShelf, startHiveWizard }
          setSelectedQr(null);
         }}>{action}</button>
        ))}
-      </div>
+      </div> : null}
      </div>
     </div>
    ) : null}
@@ -2477,11 +2867,14 @@ function QRPage({ data, setData, openHive, openInventoryShelf, startHiveWizard }
 
 function qrActionsFor(item) {
  const type = normalizeSl(item.type || "");
- if (type.includes("panj")) return ["Odpri panj", "Dodaj hranjenje", "Dodaj točenje", "Dodaj cvetni prah", "Dodaj pregled", "Povezi s škatlo", "Dodaj opombo"];
+ if (type.includes("panj") && item.linkedHiveId) return ["Pregled", "Cvetni prah", "Hranjenje", "Varoa", "Rojenje", "Sum na bolezen", "Zdravljenje", "Zapiski"];
+ if (type.includes("panj")) return [];
+ if (type.includes("teht") || type.includes("scale")) return ["Tehtanje panjev"];
  if (type.includes("skat")) return ["Odpri škatlo", "Poveži s panjem", "Stehtaj polno", "Stehtaj prazno", "Zaključi točenje"];
  if (type.includes("regal")) return ["Dodaj zalogo", "Vzemi zalogo", "Odpri skladišče", "Dodaj opombo"];
+ if (type.includes("naprav") || type.includes("device") || type.includes("senzor")) return ["Poveži s panjem", "Preskoči"];
  if (type.includes("serija") || type.includes("kozar")) return ["Odpri serijo", "Poglej sledljivost", "Dodaj polnjenje"];
- return ["Odpri vnos", "Poveži s panjem", "Dodaj opombo"];
+ return ["Kopiraj vsebino", "Ustvari vnos"];
 }
 
 function ShelfPreviewItem({ item }) {
@@ -2503,6 +2896,12 @@ function inferQrItemFromCode(code, source = "manual") {
  if (text.includes("panj") || text.includes("hive") || text.startsWith("bh-") || text.startsWith("pp-panj")) {
   return { type: "Panj", linkedTo: suggestedName, suggestedName };
  }
+ if (text.includes("scale") || text.includes("teht")) {
+  return { type: "Tehtnica", linkedTo: suggestedName, suggestedName };
+ }
+ if (text.includes("naprava") || text.includes("device") || text.includes("senzor")) {
+  return { type: "Naprava", linkedTo: suggestedName, suggestedName };
+ }
  if (text.includes("regal") || text.includes("shelf") || text.includes("sklad")) {
   return { type: "Regal", linkedTo: suggestedName, suggestedName };
  }
@@ -2511,6 +2910,9 @@ function inferQrItemFromCode(code, source = "manual") {
  }
  if (text.includes("kozarc") || text.includes("serij") || text.includes("jar")) {
   return { type: "Serija kozarcev", linkedTo: suggestedName, suggestedName };
+ }
+ if (cleanCode.startsWith("QR-")) {
+  return { type: "Panj", linkedTo: suggestedName, suggestedName };
  }
  return { type: source === "camera" ? "Skenirano" : "Ročni vnos", linkedTo: "Ni povezan s panjem", suggestedName };
 }
@@ -2526,25 +2928,34 @@ function upsertQr(items, nextItem) {
 
 function HiveFormPage({ mode, hives, initialHive, initialDraft, saveHive, cancel }) {
  const isCreate = mode === "create";
- const [step, setStep] = useState(1);
- const [form, setForm] = useState(() => initialHive || {
+ const draft = initialDraft || {};
+ const [step, setStep] = useState(() => {
+  if (!isCreate) return 1;
+  return Math.max(1, Math.min(7, Number(sessionStorage.getItem(HIVE_DRAFT_STEP_KEY)) || 1));
+ });
+ const [form, setForm] = useState(() => {
+  let savedDraft = {};
+  if (isCreate) {
+   try { savedDraft = JSON.parse(sessionStorage.getItem(HIVE_DRAFT_KEY) || "{}"); } catch {}
+  }
+  return initialHive || {
   id: `BC-2026-${String(hives.length + 1).padStart(3, "0")}`,
-  name: initialDraft.name || "",
-  location: initialDraft.location || "",
+  name: draft.name || savedDraft.name || "",
+  location: draft.location || savedDraft.location || "",
   queen: "",
   status: "ok",
   statusText: "Mirno",
   dataSource: "manual",
   weightKg: null,
   weeklyDeltaKg: null,
-  foodLiters: null,
+  foodKg: null,
   foodDays: null,
   temperatureC: null,
   humidityPct: null,
   batteryPct: null,
   signal: null,
   lastSeen: "pravkar",
-  qrCode: initialDraft.qrCode || `QR-${String(hives.length + 1).padStart(3, "0")}`,
+  qrCode: draft.qrCode || savedDraft.qrCode || `QR-${String(hives.length + 1).padStart(3, "0")}`,
   deviceId: "",
   deviceApiKey: "",
   locationName: "",
@@ -2554,11 +2965,17 @@ function HiveFormPage({ mode, hives, initialHive, initialDraft, saveHive, cancel
   locationSource: "manual",
   locationUpdatedAt: new Date().toISOString(),
   frameCount: 10,
+  framesOccupied: 10,
+  colonyStrength: "normal",
+  lastFeedingDate: "",
   hiveType: "AŽ panj",
-  forage: [],
+ forage: [],
  hiveColor: "#E8A020",
+  ...savedDraft,
+ };
  });
  const [locationMessage, setLocationMessage] = useState("");
+ const [photoMessage, setPhotoMessage] = useState("");
  const wizardTitles = ["Panj", "Oprema", "Paša", "Barva", "Lokacija", "Naprava", "Pregled"];
  const showStep = (target) => !isCreate || step === target;
 
@@ -2578,12 +2995,27 @@ function HiveFormPage({ mode, hives, initialHive, initialDraft, saveHive, cancel
   setForm((current) => ({ ...current, forage: suggestedForageFromLocation(current) }));
  }
 
- function handleSetupPhoto(event) {
+ useEffect(() => {
+  if (!isCreate) return;
+  try {
+   sessionStorage.setItem(HIVE_DRAFT_STEP_KEY, String(step));
+   sessionStorage.setItem(HIVE_DRAFT_KEY, JSON.stringify(form));
+  } catch {}
+ }, [form, isCreate, step]);
+
+ async function handleSetupPhoto(event) {
   const file = event.target.files?.[0];
   if (!file) return;
-  const reader = new FileReader();
-  reader.onload = () => update("setupPhotoUrl", reader.result);
-  reader.readAsDataURL(file);
+  setPhotoMessage("Pripravljam fotografijo ...");
+  try {
+   const compactPhoto = await resizeImageFile(file, 720, 0.65);
+   update("setupPhotoUrl", compactPhoto);
+   setPhotoMessage("Fotografija je pripravljena. Panj lahko varno shraniš.");
+  } catch (error) {
+   setPhotoMessage(`${error.message} Poskusi fotografijo iz galerije ali manjšo ločljivost.`);
+  } finally {
+   event.target.value = "";
+  }
  }
 
  function detectHiveLocation() {
@@ -2621,7 +3053,7 @@ function HiveFormPage({ mode, hives, initialHive, initialDraft, saveHive, cancel
 
  function submit(event) {
   event.preventDefault();
-  const saved = {
+  const savedDraft = {
    ...form,
    id: form.id.trim().toUpperCase(),
    name: form.name.trim() || "Nov panj",
@@ -2639,18 +3071,26 @@ function HiveFormPage({ mode, hives, initialHive, initialDraft, saveHive, cancel
    locationUpdatedAt: form.locationUpdatedAt || new Date().toISOString(),
    weightKg: form.dataSource === "manual" ? null : toNumber(form.weightKg, 0),
    weeklyDeltaKg: form.dataSource === "manual" ? null : toNumber(form.weeklyDeltaKg, 0),
-   foodLiters: form.dataSource === "manual" ? null : toNumber(form.foodLiters, 0),
-   foodDays: form.dataSource === "manual" ? null : Math.round(toNumber(form.foodDays, 0)),
+   foodKg: form.dataSource === "manual" ? null : toNumber(form.foodKg, 0),
+   foodDays: form.dataSource === "manual" ? null : calculateHiveFood(form).foodDays,
    temperatureC: form.dataSource === "manual" ? null : toNumber(form.temperatureC, 0),
    humidityPct: form.dataSource === "manual" ? null : Math.round(toNumber(form.humidityPct, 0)),
    batteryPct: form.dataSource === "manual" ? null : Math.round(toNumber(form.batteryPct, 100)),
    frameCount: Math.max(1, Math.min(30, Math.round(toNumber(form.frameCount, 10)))),
+   framesOccupied: Math.max(0, Math.min(30, Math.round(toNumber(form.framesOccupied, form.frameCount || 10)))),
+   colonyStrength: form.colonyStrength || "normal",
+   lastFeedingDate: form.lastFeedingDate || "",
    hiveType: normalizeHiveType(form.hiveType),
    forage: form.forage || [],
    hiveColor: form.hiveColor || "#E8A020",
    createdAt: form.createdAt || new Date().toISOString(),
   };
+  const saved = savedDraft.dataSource === "manual"
+   ? savedDraft
+   : { ...savedDraft, ...deriveHiveStatus(savedDraft) };
   saveHive(saved);
+  sessionStorage.removeItem(HIVE_DRAFT_KEY);
+  sessionStorage.removeItem(HIVE_DRAFT_STEP_KEY);
  }
 
  return (
@@ -2658,7 +3098,7 @@ function HiveFormPage({ mode, hives, initialHive, initialDraft, saveHive, cancel
    <PageHeader
     eyebrow={mode === "edit" ? "Uredi panj" : "Ročni vnos"}
     title={mode === "edit" ? form.name : "Dodaj panj"}
-    subtitle="Podatki se shranijo samo na tej napravi."
+    subtitle="Panj se po potrditvi shrani v tvoj profil."
     action={<button className="icon-button" onClick={cancel} aria-label="Nazaj"><ArrowLeft size={22} /></button>}
    />
    <form className="form-card" onSubmit={submit}>
@@ -2712,19 +3152,13 @@ function HiveFormPage({ mode, hives, initialHive, initialDraft, saveHive, cancel
     <div className="color-picker-row">
      {["#E8A020", "#2D6A1A", "#C94033", "#3B82F6", "#F97316", "#8B5CF6", "#14B8A6", "#F8FAFC"].map((color) => <button type="button" key={color} className={form.hiveColor === color ? "active" : ""} style={{ background: color }} onClick={() => update("hiveColor", color)} aria-label={`Barva ${color}`} />)}
     </div>
-    <label className="file-button"><Camera size={22} /> Fotografiraj sprednjo stran panja<input type="file" accept="image/*" capture="environment" onChange={handleSetupPhoto} /></label>
+    <div className="photo-source-actions">
+     <label className="file-button"><Camera size={22} /> Fotografiraj s kamero<input type="file" accept="image/*" capture="environment" onChange={handleSetupPhoto} /></label>
+     <label className="file-button"><Image size={22} /> Izberi iz galerije<input type="file" accept="image/*" onChange={handleSetupPhoto} /></label>
+    </div>
+    {photoMessage ? <p className="hint-text">{photoMessage}</p> : null}
     {form.setupPhotoUrl ? <img className="setup-photo-preview" src={form.setupPhotoUrl} alt="Sprednja stran panja" /> : null}
-     <label>Stanje
-      <select value={form.status} onChange={(event) => {
-       const status = event.target.value;
-       update("status", status);
-       update("statusText", status === "danger" ? "Ukrepaj" : status === "warn" ? "Preveri" : "Mirno");
-      }}>
-       <option value="ok">Mirno</option>
-       <option value="warn">Preveri</option>
-       <option value="danger">Ukrepaj</option>
-      </select>
-     </label>
+     <p className="hint-text">Stanje panja se izračuna samodejno iz hrane, teže in meritev.</p>
      </>
     ) : null}
     {showStep(6) ? (
@@ -2737,6 +3171,7 @@ function HiveFormPage({ mode, hives, initialHive, initialDraft, saveHive, cancel
       <button type="button" className={`choice-card ${form.dataSource === "sensor" ? "active" : ""}`} onClick={() => {
        update("dataSource", "sensor");
        if (!form.deviceId) update("deviceId", `BH-${String(hives.length + 1).padStart(5, "0")}`);
+       if (form.foodKg === null || form.foodKg === undefined) update("foodKg", 15);
       }}>
        <BatteryCharging size={28} />
        <strong>Pametni panj (s senzorjem)</strong>
@@ -2784,12 +3219,17 @@ function HiveFormPage({ mode, hives, initialHive, initialDraft, saveHive, cancel
       <span>Težo, hrano in senzorske meritve lahko dodaš kasneje, ko priklopiš PametniPanj set.</span>
      </div>
     ) : (
+    <>
     <div className="form-grid">
      <label>Teža kg<input type="number" step="0.1" value={form.weightKg || ""} onChange={(event) => update("weightKg", event.target.value)} /></label>
-     <label>Hrana L<input type="number" step="0.1" value={form.foodLiters || ""} onChange={(event) => update("foodLiters", event.target.value)} /></label>
-     <label>Dni hrane<input type="number" value={form.foodDays || ""} onChange={(event) => update("foodDays", event.target.value)} /></label>
+     <label>Kg hrane<input type="number" step="0.1" value={form.foodKg || ""} onChange={(event) => update("foodKg", event.target.value)} /></label>
+     <label>Zasedeni satovi<input type="number" min="0" max="30" value={form.framesOccupied ?? form.frameCount ?? 10} onChange={(event) => update("framesOccupied", event.target.value)} /><small>Število zasedenih satov</small></label>
+     <label>Zadnje hranjenje<input type="date" value={form.lastFeedingDate || ""} onChange={(event) => update("lastFeedingDate", event.target.value)} /></label>
+     <label>Ocenjeno dni hrane<input value={calculateHiveFood(form).foodDays} readOnly /></label>
      <label>Temp. °C<input type="number" step="0.1" value={form.temperatureC || ""} onChange={(event) => update("temperatureC", event.target.value)} /></label>
     </div>
+    <label>Moč družine<div className="pill-select">{[["weak", "Šibka"], ["normal", "Normalna"], ["strong", "Močna"]].map(([id, label]) => <button className={(form.colonyStrength || "normal") === id ? "active" : ""} type="button" key={id} onClick={() => update("colonyStrength", id)}>{label}</button>)}</div></label>
+    </>
     )}
      <div className="suggestion-box">
       <strong>{form.name || "Nov panj"}</strong>
@@ -3212,6 +3652,9 @@ function VoicePage({ data, saveNotebookNote, confirmNotebookSuggestion, deleteNo
  const [photo, setPhoto] = useState(null);
  const [recording, setRecording] = useState(false);
  const [speechMessage, setSpeechMessage] = useState("");
+ const [photoMessage, setPhotoMessage] = useState("");
+ const [saving, setSaving] = useState(false);
+ const [saveMessage, setSaveMessage] = useState("");
  const [filterHiveId, setFilterHiveId] = useState("all");
  const [sortMode, setSortMode] = useState("date");
  const [suggestionDismissed, setSuggestionDismissed] = useState(false);
@@ -3289,16 +3732,19 @@ function VoicePage({ data, saveNotebookNote, confirmNotebookSuggestion, deleteNo
   recognition.start();
  }
 
- function handlePhoto(event) {
+ async function handlePhoto(event) {
   const file = event.target.files?.[0];
   if (!file) return;
-  if (file.size > 4 * 1024 * 1024) {
-   alert("Fotografija je večja od 4 MB. Izberi manjšo fotografijo.");
-   return;
+  setPhotoMessage("Pripravljam fotografijo za shranjevanje ...");
+  try {
+   const compactUrl = await resizeImageFile(file, 1100, 0.76);
+   const quality = await analyzeImageQuality(compactUrl);
+   const compactSizeMb = roundOne(new Blob([compactUrl]).size / 1024 / 1024);
+   setPhoto({ url: compactUrl, sizeMb: compactSizeMb, originalSizeMb: roundOne(file.size / 1024 / 1024), name: file.name, quality, aiAnalysis: "" });
+   setPhotoMessage(`${quality.message} Izvirnik ${roundOne(file.size / 1024 / 1024)} MB je zmanjšan na približno ${compactSizeMb} MB.`);
+  } catch (error) {
+   setPhotoMessage(`Fotografije ni bilo mogoče pripraviti: ${error.message}`);
   }
-  const reader = new FileReader();
-  reader.onload = () => setPhoto({ url: reader.result, sizeMb: roundOne(file.size / 1024 / 1024), name: file.name });
-  reader.readAsDataURL(file);
  }
 
  function clearComposer() {
@@ -3307,13 +3753,25 @@ function VoicePage({ data, saveNotebookNote, confirmNotebookSuggestion, deleteNo
   setPhoto(null);
   setSuggestionDismissed(false);
   setSpeechMessage("");
+  setPhotoMessage("");
  }
 
- function submitNote(event) {
+ async function submitNote(event) {
   event.preventDefault();
   if (!text.trim() && !photo) return;
-  saveNotebookNote({ hiveId, title, text, photo });
-  clearComposer();
+  setSaving(true);
+  setSaveMessage("Pametna čebela pregleduje fotografijo in shranjuje zapis ...");
+  try {
+   const hive = getHive(data.hives, hiveId);
+   const aiAnalysis = photo ? await analyzeNotebookPhoto(photo, hive, text) : "";
+   await saveNotebookNote({ hiveId, title, text, photo: photo ? { ...photo, aiAnalysis } : null });
+   setSaveMessage("Zapis je shranjen na strežniku.");
+   clearComposer();
+  } catch (error) {
+   setSaveMessage(`Zapis je ostal lokalno, strežnik pa ga ni sprejel: ${error.message}`);
+  } finally {
+   setSaving(false);
+  }
  }
 
  function acceptSuggestion() {
@@ -3331,14 +3789,16 @@ function VoicePage({ data, saveNotebookNote, confirmNotebookSuggestion, deleteNo
      <HiveSelect hives={data.hives} value={hiveId} onChange={(value) => { setHiveId(value); setSuggestionDismissed(false); }} />
      <input className="notebook-title-input" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Naslov zapisa" />
      <textarea className="notebook-textarea" value={text} onChange={(event) => { setText(event.target.value); setSuggestionDismissed(false); }} placeholder="Kaj si danes opazil pri panju?" />
-     {photo ? <div className="notebook-photo-preview"><img src={photo.url} alt="Fotografija zapiska" /><button type="button" className="text-button" onClick={() => setPhoto(null)}>Odstrani fotografijo</button></div> : null}
+     {photo ? <div className="notebook-photo-preview"><img src={photo.url} alt="Fotografija zapiska" /><p>{photo.quality?.message}</p><button type="button" className="text-button" onClick={() => setPhoto(null)}>Odstrani fotografijo</button></div> : null}
     </div>
     <div className="notebook-tools">
      <button className={`notebook-mic-button ${recording ? "recording" : ""}`} type="button" onClick={startVoiceCapture}><Mic size={22} /> {recording ? "Ustavi snemanje" : "Narekuj"}</button>
      <label className="notebook-photo-button"><Camera size={22} /> Fotografija<input type="file" accept="image/*" capture="environment" onChange={handlePhoto} /></label>
-     <button className="primary-button notebook-save-button" type="submit"><Save size={20} /> Shrani zapis</button>
+     <button className="primary-button notebook-save-button" type="submit" disabled={saving}><Save size={20} /> {saving ? "Shranjujem ..." : "Shrani zapis"}</button>
     </div>
     {speechMessage ? <p className="hint-text">{speechMessage}</p> : null}
+    {photoMessage ? <p className="hint-text">{photoMessage}</p> : null}
+    {saveMessage ? <p className={saveMessage.startsWith("Zapis je shranjen") ? "success-text" : "warning-text"}>{saveMessage}</p> : null}
    </form>
 
    {suggestion ? (
@@ -3373,10 +3833,11 @@ function VoicePage({ data, saveNotebookNote, confirmNotebookSuggestion, deleteNo
    <div className="notebook-list">
     {visibleNotes.length ? visibleNotes.map((note) => (
      <article className="notebook-entry" key={note.id}>
-      <div className="notebook-entry-meta"><span>{getHiveName(data.hives, note.hiveId)}</span><time>{note.date}</time></div>
+      <div className="notebook-entry-meta"><span>{getHiveName(data.hives, note.hiveId)}</span><time>{formatSlovenianDate(note.date)}</time></div>
       <h3>{note.title}</h3>
       <p>{note.text}</p>
       {note.photoUrl ? <img src={note.photoUrl} alt={note.title || "Fotografija zapiska"} /> : null}
+      {note.aiAnalysis ? <p className="notebook-ai-analysis"><strong>Pametna čebela:</strong> {note.aiAnalysis}</p> : null}
       <button className="icon-button small-icon-button notebook-delete" type="button" onClick={() => deleteNote(note.id)} aria-label="Izbriši zapis"><Trash2 size={18} /></button>
      </article>
     )) : <div className="empty">Za ta panj še ni zapiskov.</div>}
@@ -3387,34 +3848,42 @@ function VoicePage({ data, saveNotebookNote, confirmNotebookSuggestion, deleteNo
 
 
 function FeedingPage({ data, addFeedingEvent }) {
- const [form, setForm] = useState({ hiveId: data.hives[0]?.id || "", amountLiters: 2, feedType: "sirup 1:1", note: "" });
+ const [form, setForm] = useState({ hiveId: data.hives[0]?.id || "", amountKg: 2, feedType: "sirup 1:1", note: "" });
  const selectedHive = getHive(data.hives, form.hiveId);
- const foodPct = Math.min(100, selectedHive.foodLiters * 10);
+ if (!selectedHive) {
+  return (
+   <section>
+    <PageHeader eyebrow="Hranjenje" title="Najprej dodaj panj" subtitle="Hranjenje lahko zabeležiš, ko ima račun vsaj en panj." />
+    <div className="empty">Trenutno ni panja, za katerega bi lahko dodali hranjenje.</div>
+   </section>
+  );
+ }
+ const foodPct = Math.min(100, selectedHive.foodKg * 10);
  const dailySugarCost = 0.8;
 
  function submit(event) {
   event.preventDefault();
   addFeedingEvent(form);
-  setForm((current) => ({ ...current, amountLiters: 2, note: "" }));
+  setForm((current) => ({ ...current, amountKg: 2, note: "" }));
  }
 
  return (
   <section>
    <PageHeader eyebrow="Hranjenje" title="FeedScale pregled" subtitle="Vrednosti so simulirane, brez povezave na pravo strojno opremo." />
    <div className={`feed-tank card ${foodPct < 20 ? "feed-low" : ""}`}>
-    <div className="tank"><i style={{ height: `${foodPct}%` }} /><strong>{selectedHive.foodLiters} L</strong></div>
+    <div className="tank"><i style={{ height: `${foodPct}%` }} /><strong>{selectedHive.foodKg} kg</strong></div>
     <div>
      <h2>{selectedHive.name}</h2>
      <p className="subtle">Ocenjeno se {selectedHive.foodDays} dni hrane.</p>
      {foodPct < 20 ? <p className="warning-text">Nizka zaloga. Priporočam hranjenje ali fizični pregled.</p> : null}
      <p className="cost-text">Strošek sladkorja: ~{dailySugarCost.toFixed(2)} €/dan · ~{(dailySugarCost * 7).toFixed(2)} €/teden · ~{(dailySugarCost * 48).toFixed(0)} €/leto</p>
-     <TinyTrend values={[9, 8.4, 7.8, 7.1, selectedHive.foodLiters]} tone="green" />
+     <TinyTrend values={[9, 8.4, 7.8, 7.1, selectedHive.foodKg]} tone="green" />
     </div>
    </div>
    <form className="form-card compact-form" onSubmit={submit}>
     <HiveSelect hives={data.hives} value={form.hiveId} onChange={(value) => setForm((current) => ({ ...current, hiveId: value }))} />
     <div className="form-grid">
-     <label>Količina L<input type="number" step="0.1" value={form.amountLiters} onChange={(event) => setForm((current) => ({ ...current, amountLiters: event.target.value }))} /></label>
+     <label>Količina kg<input type="number" step="0.1" value={form.amountKg} onChange={(event) => setForm((current) => ({ ...current, amountKg: event.target.value }))} /></label>
      <label>Vrsta hrane<input value={form.feedType} onChange={(event) => setForm((current) => ({ ...current, feedType: event.target.value }))} /></label>
     </div>
     <label>Opomba<input value={form.note} onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))} placeholder="npr. po deževnem tednu" /></label>
@@ -3424,13 +3893,13 @@ function FeedingPage({ data, addFeedingEvent }) {
    <div className="stack">
     {data.hives.map((hive) => (
      <div className="feed-row" key={hive.id}>
-      <div><strong>{hive.name}</strong><span>{hive.foodLiters} L · {hive.foodDays} dni</span></div>
-      <div className="progress"><i style={{ width: `${Math.min(100, hive.foodLiters * 10)}%` }} /></div>
+      <div><strong>{hive.name}</strong><span>{hive.foodKg} kg · {hive.foodDays} dni</span></div>
+      <div className="progress"><i style={{ width: `${Math.min(100, hive.foodKg * 10)}%` }} /></div>
      </div>
     ))}
    </div>
    <h2 className="section-title">Časovnica hranjenja</h2>
-   <div className="stack">{data.feedingEvents.map((event) => <EventCard key={event.id} icon={Utensils} title={`${getHiveName(data.hives, event.hiveId)}: ${event.amountLiters} L`} subtitle={`${event.date} · ${event.feedType} · ${event.note}`} />)}</div>
+   <div className="stack">{data.feedingEvents.map((event) => <EventCard key={event.id} icon={Utensils} title={`${getHiveName(data.hives, event.hiveId)}: ${event.amountKg ?? event.amountLiters} kg`} subtitle={`${formatSlovenianDate(event.date)} · ${event.feedType} · ${event.note}`} />)}</div>
   </section>
  );
 }
@@ -3472,7 +3941,7 @@ function ExtractionPage({ data, addExtractionEvent }) {
       key={event.id}
       icon={Scale}
       title={`${getHiveName(data.hives, event.hiveId)}: ${event.netKg} kg`}
-      subtitle={`${event.date} · ${event.honeyType} · ${event.frames} satov`}
+      subtitle={`${formatSlovenianDate(event.date)} · ${event.honeyType} · ${event.frames} satov`}
      />
     ))}
    </div>
@@ -3602,7 +4071,7 @@ function PollenPage({ data, addPollenEvent }) {
     <label>Opomba<input value={form.notes} onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))} /></label>
     <button className="primary-button" type="submit">Shrani cvetni prah</button>
    </form>
-   <div className="stack">{data.pollenEvents.map((event) => <EventCard key={event.id} icon={Droplets} title={`${getHiveName(data.hives, event.hiveId)}: ${event.amountKg} kg`} subtitle={`${event.date} · ${event.notes}`} />)}</div>
+   <div className="stack">{data.pollenEvents.map((event) => <EventCard key={event.id} icon={Droplets} title={`${getHiveName(data.hives, event.hiveId)}: ${event.amountKg} kg`} subtitle={`${formatSlovenianDate(event.date)} · ${event.notes}`} />)}</div>
   </section>
  );
 }
@@ -3651,14 +4120,15 @@ function ProductsPage({ data, addProductEvent }) {
     <div className="card-title"><h2>Po mesecih</h2><span>demo graf</span></div>
     <TinyTrend values={[1, 3, 5, 8, 6, 4, 2]} tone="green" />
    </div>
-   <div className="stack">{(data.productEvents || []).map((event) => <EventCard key={event.id} icon={Droplets} title={`${event.productType}: ${event.quantity} ${event.unit}`} subtitle={`${getHiveName(data.hives, event.hiveId)} · ${event.date} · ${event.note || "brez opombe"}`} />)}</div>
+   <div className="stack">{(data.productEvents || []).map((event) => <EventCard key={event.id} icon={Droplets} title={`${event.productType}: ${event.quantity} ${event.unit}`} subtitle={`${getHiveName(data.hives, event.hiveId)} · ${formatSlovenianDate(event.date)} · ${event.note || "brez opombe"}`} />)}</div>
   </section>
  );
 }
 
 function InventoryPage({ data, addInventoryTransaction, initialShelf = "", initialDraft = null }) {
+ const draft = initialDraft || {};
  const [activeShelf, setActiveShelf] = useState(initialShelf || "Vse");
- const [form, setForm] = useState({ category: initialDraft.category || "Sladkor", name: initialDraft.name || "Sladkor", quantity: initialDraft.quantity || 5, unit: initialDraft.unit || "kg", shelf: initialDraft.shelf || initialShelf || "Regal A1", direction: initialDraft.direction || "add", brand: "", jarSize: "720 ml", condition: "Dobra", expiryDate: "" });
+ const [form, setForm] = useState({ category: draft.category || "Sladkor", name: draft.name || "Sladkor", quantity: draft.quantity || 5, unit: draft.unit || "kg", shelf: draft.shelf || initialShelf || "Regal A1", direction: draft.direction || "add", brand: "", jarSize: "720 ml", condition: "Dobra", expiryDate: "" });
  const [search, setSearch] = useState("");
  const shelves = ["Vse", ...new Set([
   ...data.qrItems.filter((item) => normalizeSl(item.type).includes("regal")).map((item) => item.linkedTo || item.id),
@@ -3768,7 +4238,7 @@ function FillingPage({ data, addFillingEvent }) {
     {remaining < 0 ? <p className="warning-text">Pozor: serija nima dovolj medu. Manjka {Math.abs(remaining).toFixed(1)} kg.</p> : <p className="success-text">Po polnjenju ostane {remaining.toFixed(1)} kg.</p>}
     <button className="primary-button" type="submit">Shrani polnjenje</button>
    </form>
-   <div className="stack">{data.jarFillingEvents.map((event) => <EventCard key={event.id} icon={ListPlus} title={`${event.jarCount} kozarcev · ${event.usedKg.toFixed(1)} kg`} subtitle={`${event.date} · izguba/ostanek ocenjen`} />)}</div>
+   <div className="stack">{data.jarFillingEvents.map((event) => <EventCard key={event.id} icon={ListPlus} title={`${event.jarCount} kozarcev · ${event.usedKg.toFixed(1)} kg`} subtitle={`${formatSlovenianDate(event.date)} · izguba/ostanek ocenjen`} />)}</div>
   </section>
  );
 }
@@ -4072,6 +4542,7 @@ const BEE_ASSISTANT_KEYWORDS = [
  "hran", "sirup", "sladkor", "pogac", "zaloga", "feed", "teht", "teza", "senzor", "naprava", "bater", "signal",
  "akacij", "lipa", "kostanj", "ajda", "pasa", "gozd", "travnik", "vreme", "dez", "veter", "temperatura",
  "opomnik", "koledar", "pregled", "zapis", "qr", "regal", "skladisc", "oprema", "panji", "cebelnjak",
+ "zascit", "varnost", "rokavic", "klobuk", "mreza", "obraz", "roke", "obleka", "obutev", "dimil", "dim", "pik", "alerg", "otek", "anafil",
  "kaj naj", "stanje", "opozoril", "obvestil", "danes v panj", "jutri v panj"
 ];
 
@@ -4102,7 +4573,7 @@ function isAllowedSmartBeeQuestion(question, data = {}) {
 }
 
 function offTopicAiMessage() {
- return "Pametna čebela zna pomagati pri čebelarstvu, panjih, medu, vremenu za pregled, opomnikih, zalogi, senzorjih in tvojem čebelnjaku. Za ostale teme raje vprašaj drugega pomočnika.";
+ return "Pametna čebela zna pomagati pri čebelarstvu, varnem delu, zaščitni opremi, panjih, medu, vremenu, zalogi, senzorjih in tvojem čebelnjaku. Za povsem druge teme raje vprašaj drugega pomočnika.";
 }
 
 function localAiAnswer(question) {
@@ -4132,16 +4603,17 @@ function aiTiredMessage() {
 }
 
 function AiAssistantPage({ data, openHive, setPage }) {
- const suggestions = ["Kdaj dodati medišče", "Znaki rojenja", "Kako zdraviti varojo", "Kdaj točiti med"];
+ const suggestions = ["Kdaj dodati medišče", "Znaki rojenja", "Zaščita pri delu", "Kdaj točiti med"];
  const [question, setQuestion] = useState("");
  const [thinking, setThinking] = useState(false);
- const [dailyLimit, setDailyLimit] = useState(() => Number(localStorage.getItem(AI_DAILY_LIMIT_KEY) || AI_DEFAULT_DAILY_LIMIT));
  const [usage, setUsage] = useState(() => readAiUsage());
+ const planId = resolvePlanId(localStorage.getItem(PLAN_KEY));
+ const plan = PLAN_OPTIONS[planId] || PLAN_OPTIONS.free;
  const [messages, setMessages] = useState([
-  { role: "assistant", text: "Pametna čebela najprej odgovori lokalno. Zahtevnejša vprašanja obdela samo, če so povezana s čebelarstvom ali osnovnimi podatki, kot sta datum in ura." },
+  { role: "assistant", text: "Živjo. Vprašaj me o svojih panjih, čebelarstvu, vremenu ali današnjem načrtu." },
  ]);
  const cloudAvailable = Boolean(AI_API_URL);
- const limitReached = usage.count >= dailyLimit;
+ const limitReached = usage.count >= plan.aiLimit;
  const priorityHive = data.hives.find((hive) => hive.status === "danger") || data.hives.find((hive) => hive.status === "warn") || data.hives[0];
 
  function addExchange(userText, assistantText) {
@@ -4191,18 +4663,12 @@ function AiAssistantPage({ data, openHive, setPage }) {
   }
  }
 
- function updateDailyLimit(value) {
-  const next = Math.max(1, Number(value) || AI_DEFAULT_DAILY_LIMIT);
-  setDailyLimit(next);
-  localStorage.setItem(AI_DAILY_LIMIT_KEY, String(next));
- }
-
  return (
   <section>
    <PageHeader
     eyebrow="Pametna čebela"
     title="Čebelarski pomočnik"
-    subtitle="Odgovarja na čebelarska vprašanja in osnovne stvari, kot sta datum in ura. Ostale teme zavrne."
+    subtitle="Pomaga pri čebelarstvu, varnem delu, opremi, panjih in osnovnih vprašanjih, kot sta datum in ura."
     action={<span className={["ai-status-dot", cloudAvailable && !limitReached ? "online" : "offline"].join(" ")} title={cloudAvailable && !limitReached ? "Pametna čebela pripravljena" : "Lokalni način"} />}
    />
    <div className="ai-hero-card">
@@ -4212,14 +4678,14 @@ function AiAssistantPage({ data, openHive, setPage }) {
      <span>{priorityHive ? "Najprej bi pogledal panj " + priorityHive.name + "." : "Dodaj panj, da lahko prikažem osnovno stanje."}</span>
     </div>
    </div>
-   <div className="ai-budget-card">
+   <div className="ai-budget-card ai-plan-card">
     <div>
-     <strong>Pametni odgovori danes</strong>
-     <span>{usage.count} / {dailyLimit} zahtevnih vprašanj</span>
+     <strong>Paket {plan.label}</strong>
+     <span>{Math.max(0, plan.aiLimit - usage.count)} od {plan.aiLimit} pametnih odgovorov je danes še na voljo.</span>
     </div>
-    <label>Dnevna omejitev<input type="number" min="1" value={dailyLimit} onChange={(event) => updateDailyLimit(event.target.value)} /></label>
+    <span className="plan-badge">{plan.label}</span>
    </div>
-   {limitReached ? <p className="warning-text">{aiTiredMessage()}</p> : null}
+   {limitReached ? <div className="ai-upgrade-note"><strong>Za danes si porabil vseh {plan.aiLimit} pametnih odgovorov paketa {plan.label}.</strong><span>Osnovna lokalna pomoč še vedno deluje. Nova dnevna količina bo na voljo jutri.</span></div> : null}
    <div className="pill-row">
     {suggestions.map((item) => <button type="button" key={item} disabled={thinking} onClick={() => ask(item)}>{item}</button>)}
    </div>
@@ -4246,9 +4712,10 @@ function DevicesPage({ data }) {
  );
 }
 
-function SettingsPage({ data, setData }) {
+function SettingsPage({ data, setData, session, onSignOut }) {
  const [importText, setImportText] = useState("");
  const [userType, setUserType] = useState(() => localStorage.getItem(USER_TYPE_KEY) || "experienced");
+ const [planId, setPlanId] = useState(() => resolvePlanId(localStorage.getItem(PLAN_KEY)));
 
  function exportJson() {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -4282,10 +4749,27 @@ function SettingsPage({ data, setData }) {
   localStorage.setItem(USER_TYPE_KEY, value);
  }
 
+ function updatePlan(value) {
+  setPlanId(value);
+  localStorage.setItem(PLAN_KEY, value);
+ }
+
  return (
   <section>
    <PageHeader eyebrow="Nastavitve" title="PametniPanj" subtitle="Offline-first: vsi podatki so v localStorage." />
    <div className="stack">
+    {session ? <button className="list-row" type="button" onClick={onSignOut}><LogOut size={24} /><div><strong>Odjava</strong><span>Odjavi ta račun iz naprave.</span></div></button> : null}
+    <div className="form-card">
+     <div className="card-title"><div><span>Testiranje naročnin</span><h2>Izbrani paket: {PLAN_OPTIONS[planId].label}</h2></div></div>
+     <div className="plan-options">
+      {Object.entries(PLAN_OPTIONS).map(([id, option]) => (
+       <button className={planId === id ? "active" : ""} type="button" key={id} onClick={() => updatePlan(id)}>
+        <strong>{option.label}</strong><span>{option.description}</span>
+       </button>
+      ))}
+     </div>
+     <p className="subtle">To je samo simulacija paketov. Plačila še niso povezana.</p>
+    </div>
     <div className="form-card">
      <label>Tip uporabnika<select value={userType} onChange={(event) => updateUserType(event.target.value)}>
       <option value="experienced">Sem že čebelar</option>
@@ -4649,8 +5133,8 @@ function BeginnerGuidePage({ setPage }) {
  );
 }
 
-function NewsAdminPage({ data, addNewsItem }) {
- const [unlocked, setUnlocked] = useState(() => localStorage.getItem("pametnipanj-news-admin") === "ok");
+function NewsAdminPage({ data, addNewsItem, adminAccess = false }) {
+ const [unlocked, setUnlocked] = useState(() => adminAccess || localStorage.getItem("pametnipanj-news-admin") === "ok");
  const [password, setPassword] = useState("");
  const [form, setForm] = useState({ title: "", body: "", date: new Date().toISOString().slice(0, 10), calendarDate: "", priority: "ok", addToCalendar: true });
 
@@ -4668,7 +5152,7 @@ function NewsAdminPage({ data, addNewsItem }) {
   setForm((current) => ({ ...current, title: "", body: "", calendarDate: "" }));
  }
 
- if (!unlocked) {
+ if (!adminAccess && !unlocked) {
   return (
    <section>
     <PageHeader eyebrow="Novice" title="Admin novice" subtitle="Za zdaj lokalni urejevalnik. Geslo je demo in ga pred javno rabo zamenjamo s pravo prijavo." />
@@ -4698,8 +5182,113 @@ function NewsAdminPage({ data, addNewsItem }) {
    <div className="card">
     <h2>Objavljene novice</h2>
     <div className="stack">
-     {(data.newsItems || []).length ? data.newsItems.map((item) => <EventCard key={item.id} icon={CalendarDays} title={item.title} subtitle={`${item.date} · ${item.priority} · ${item.body}`} />) : <p className="subtle">Ni še novic.</p>}
+     {(data.newsItems || []).length ? data.newsItems.map((item) => <EventCard key={item.id} icon={CalendarDays} title={item.title} subtitle={`${formatSlovenianDate(item.date)} · ${item.priority} · ${item.body}`} />) : <p className="subtle">Ni še novic.</p>}
     </div>
+   </div>
+  </section>
+ );
+}
+
+function AdminSystemCalendarPage({ data, addSystemEvent, removeSystemEvent }) {
+ const [form, setForm] = useState({ title: "", body: "", calendarDate: new Date().toISOString().slice(0, 10), priority: "ok", sourceUrl: "" });
+ const [editingId, setEditingId] = useState("");
+
+ function submit(event) {
+  event.preventDefault();
+  addSystemEvent(form, editingId);
+  setForm((current) => ({ ...current, title: "", body: "", sourceUrl: "" }));
+  setEditingId("");
+ }
+
+ function startEdit(item) {
+  setEditingId(item.id);
+  setForm({ title: item.title, body: item.note || item.body || "", calendarDate: item.calendarDate || item.date, priority: item.priority || "ok", sourceUrl: item.sourceUrl || "" });
+  window.scrollTo({ top: 0, behavior: "smooth" });
+ }
+
+ return (
+  <section>
+   <PageHeader eyebrow="Skrbniški dostop" title="Sistemski koledar" subtitle="Ti dogodki so namenjeni vsem prijavljenim čebelarjem." />
+   <form className="form-card compact-form" onSubmit={submit}>
+    <label>Naslov<input required value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} placeholder="npr. Rok za oddajo vloge" /></label>
+    <label>Opis in navodila<textarea required value={form.body} onChange={(event) => setForm((current) => ({ ...current, body: event.target.value }))} placeholder="Kaj mora čebelar vedeti in narediti?" /></label>
+    <div className="form-grid">
+     <label>Datum<input required type="date" value={form.calendarDate} onChange={(event) => setForm((current) => ({ ...current, calendarDate: event.target.value }))} /></label>
+     <label>Pomembnost<select value={form.priority} onChange={(event) => setForm((current) => ({ ...current, priority: event.target.value }))}><option value="ok">Običajno</option><option value="warn">Pomembno</option><option value="danger">Nujno</option></select></label>
+    </div>
+    <label>Uradni vir ali povezava<input type="url" value={form.sourceUrl} onChange={(event) => setForm((current) => ({ ...current, sourceUrl: event.target.value }))} placeholder="https://..." /></label>
+    <div className="cloud-actions">
+     <button className="primary-button" type="submit">{editingId ? "Shrani spremembe" : "Objavi sistemski dogodek"}</button>
+     {editingId ? <button className="secondary-button" type="button" onClick={() => { setEditingId(""); setForm({ title: "", body: "", calendarDate: new Date().toISOString().slice(0, 10), priority: "ok", sourceUrl: "" }); }}>Prekliči urejanje</button> : null}
+    </div>
+   </form>
+   <h2 className="section-title">Objavljeni sistemski dogodki</h2>
+   <div className="stack">
+    {(data.systemEvents || []).length ? [...data.systemEvents].sort((a, b) => calendarSortValue(a) - calendarSortValue(b)).map((item) => (
+     <article className={`reminder reminder-${item.priority || "ok"}`} key={item.id}>
+      <CalendarDays size={22} />
+      <div><strong>{item.title}</strong><span>{formatSlovenianDate(item.date)} · {item.note}</span>{item.sourceUrl ? <a href={item.sourceUrl} target="_blank" rel="noreferrer">Odpri vir</a> : null}</div>
+      <div className="calendar-admin-actions"><button className="icon-button small-icon-button" type="button" onClick={() => startEdit(item)} aria-label="Uredi sistemski dogodek"><Pencil size={18} /></button><button className="icon-button small-icon-button" type="button" onClick={() => removeSystemEvent(item.id)} aria-label="Izbriši sistemski dogodek"><Trash2 size={18} /></button></div>
+     </article>
+    )) : <p className="empty">Sistemski koledar še nima objavljenih dogodkov.</p>}
+   </div>
+  </section>
+ );
+}
+
+function AdminUsersPage({ session, selectedUserId, selectUser, openUserSimulator }) {
+ const [overview, setOverview] = useState({ users: [], hives: [], readings: [] });
+ const [message, setMessage] = useState("Nalagam uporabnike ...");
+ const users = overview.users.filter((user) => user.role !== "admin");
+ const selectedUser = users.find((user) => user.id === selectedUserId) || users[0] || null;
+ const selectedHives = selectedUser ? overview.hives.filter((hive) => hive.userId === selectedUser.id) : [];
+
+ useEffect(() => {
+  fetchAdminOverview(session)
+   .then((next) => {
+    setOverview(next);
+    if (!selectedUserId && next.users.some((user) => user.role !== "admin")) {
+     selectUser(next.users.find((user) => user.role !== "admin").id);
+    }
+    setMessage(`Osveženo ob ${new Date().toLocaleTimeString("sl-SI", { hour: "2-digit", minute: "2-digit" })}`);
+   })
+   .catch((error) => setMessage(`Napaka: ${error.message}`));
+ }, [session]);
+
+ return (
+  <section>
+   <PageHeader eyebrow="Skrbniški dostop" title="Uporabniki in panji" subtitle="Pregled računov, panjev in zadnjih aktivnosti." />
+   <p className="simulator-status">{message}</p>
+   <div className="admin-user-layout">
+    <div className="stack admin-user-list">
+    {users.map((user) => {
+     const userHives = overview.hives.filter((hive) => hive.userId === user.id);
+     return <button className={`admin-user-card ${selectedUser?.id === user.id ? "active" : ""}`} type="button" key={user.id} onClick={() => selectUser(user.id)}><div><strong>{user.full_name || user.username || user.email}</strong><span>{user.email}</span></div><b>{userHives.length} panjev</b></button>;
+    })}
+    {!users.length ? <p className="empty">Ni še registriranih čebelarjev.</p> : null}
+    </div>
+    {selectedUser ? (
+     <div className="admin-user-detail">
+      <div className="card-title"><div><span>Izbrani čebelar</span><h2>{selectedUser.full_name || selectedUser.username || selectedUser.email}</h2></div><strong>{selectedHives.length} panjev</strong></div>
+      <div className="stack">
+       {selectedHives.map((hive) => {
+        const hiveReadings = overview.readings.filter((reading) => reading.hiveId === hive.id);
+        return (
+         <article className="card admin-hive-card" key={hive.id}>
+          <div className="card-title"><div><span>{hive.location || "Lokacija ni določena"}</span><h2>{hive.name}</h2></div><StatusBadge status={hive.status}>{hive.statusText}</StatusBadge></div>
+          <div className="pill-row">
+           <span>{hive.deviceId || `SIM-${hive.id}`}</span>
+           <span>{hive.dataSource === "sensor" ? "Senzorski panj" : "Ročni panj"}</span>
+           <span>{hiveReadings.length} meritev</span>
+          </div>
+          <button className="primary-button full-button" type="button" onClick={() => openUserSimulator(selectedUser.id, hive.id)}>Odpri in urejaj v simulatorju</button>
+         </article>
+        );
+       })}
+       {!selectedHives.length ? <p className="empty">Ta uporabnik še nima panjev na strežniku.</p> : null}
+      </div>
+     </div>
+    ) : null}
    </div>
   </section>
  );
@@ -4730,12 +5319,10 @@ function MorePage({ setPage }) {
     ["porocanje", "Zakonsko poročanje", Scale, "Popis čebeljih družin · 15.4. in 31.10."],
     ["beginner", "Vodič za začetnike", HeartPulse, "Društvo, registracije, čebele in prvi roki"],
     ["finance", "Bilanca", Scale, "Prihodki, stroški, dobiček"],
-    ["newsAdmin", "Novice admin", CalendarDays, "Objave in koledarski napotki"],
     ["inventory", "Zaloga", ClipboardList, "Sladkor, kozarci, oprema na regalu"],
     ["filling", "Polnjenje", ListPlus, "Kozarci, serije in ostanek medu"],
     ["devices", "Naprave", Radio, "Povezave s senzorji in tehtnicami"],
     ["settings", "Nastavitve", Settings, "Izvoz, uvoz in demo podatki"],
-    ["debug", "Tech podatki", Gauge, "Za testiranje senzorjev"],
    ],
   },
  ];
@@ -4817,7 +5404,7 @@ function ReminderRow({ reminder, hives }) {
    <CalendarDays size={22} />
    <div>
     <strong>{isOverdue ? "Zamuda: " : ""}{reminder.title}</strong>
-    <span>{getHiveName(hives, reminder.hiveId)} · {reminder.date} · {reminder.time}</span>
+    <span>{getHiveName(hives, reminder.hiveId)} · {formatSlovenianDate(reminder.date)} · {reminder.time}</span>
    </div>
   </div>
  );
@@ -4841,10 +5428,363 @@ function NoteCard({ note, hives }) {
    <Mic size={22} />
    <div>
     <strong>{note.title}</strong>
-    <span>{getHiveName(hives, note.hiveId)} · {note.date}{note.duration ? ` · ${note.duration}` : ""}</span>
+    <span>{getHiveName(hives, note.hiveId)} · {formatSlovenianDate(note.date)}{note.duration ? ` · ${note.duration}` : ""}</span>
     <p>{note.text}</p>
    </div>
   </article>
+ );
+}
+
+function AccessPage({ auth, setAuth, message, onSignIn, onSignUp }) {
+ const [registrationMode, setRegistrationMode] = useState(false);
+ return (
+  <div className="access-shell">
+   <section className="access-card">
+    <div className="access-brand"><Hexagon size={34} /><div><strong>PametniPanj</strong><span>Testni strežniški dostop</span></div></div>
+    <h1>{registrationMode ? "Ustvari račun" : "Prijava čebelarja"}</h1>
+    <p>{registrationMode ? "Izberi svoje ime, uporabniško ime in novo geslo." : "Prijavi se z uporabniškim imenom in geslom svojega obstoječega računa."}</p>
+    <form className="auth-form" onSubmit={registrationMode ? (event) => { event.preventDefault(); onSignUp(); } : onSignIn}>
+     {registrationMode ? <label>Ime<input maxLength={40} value={auth.name || ""} onChange={(event) => setAuth((current) => ({ ...current, name: event.target.value }))} placeholder="npr. Luka" /></label> : null}
+     <label>Uporabniško ime<input maxLength={20} autoComplete="username" value={auth.username} onChange={(event) => setAuth((current) => ({ ...current, username: event.target.value.slice(0, 20) }))} placeholder="npr. luka" /></label>
+     <label>Geslo<input minLength={registrationMode ? 6 : undefined} type="password" autoComplete={registrationMode ? "new-password" : "current-password"} value={auth.password} onChange={(event) => setAuth((current) => ({ ...current, password: event.target.value }))} placeholder={registrationMode ? "najmanj 6 znakov" : "tvoje geslo"} /></label>
+     {message ? <p className="warning-text">{message}</p> : null}
+     <button className="primary-button" type="submit">{registrationMode ? "Ustvari račun" : "Prijava"}</button>
+     <button className="secondary-button" type="button" onClick={() => setRegistrationMode((current) => !current)}>{registrationMode ? "Nazaj na prijavo" : "Ustvari nov račun"}</button>
+    </form>
+   </section>
+  </div>
+ );
+}
+
+function RegistrationPlanPage({ finish }) {
+ const [message, setMessage] = useState("");
+ const plans = [
+  { id: "free", title: "BREZPLAČNO", price: "Za vedno brezplačno", features: ["Do 3 panji", "Osnovna čebela AI", "Koledar in opomniki", "QR sledljivost"], unavailable: ["PDF poročila", "Senzorji in tehtanje"] },
+  { id: "pro", title: "ČEBELAR PRO", price: "9 €/mesec", features: ["Neomejeni panji", "Napredna AI čebela", "PDF poročila", "Senzorji in tehtanje", "Zakonsko poročanje PDF", "Čebelarski bilten"], soon: true },
+  { id: "plus", title: "ČEBELARSTVO PLUS", price: "19 €/mesec", features: ["Vse iz Pro", "QR landing strani", "Začetniški vodič", "Apiturizem integracija", "Prioritetna podpora"], soon: true },
+ ];
+ function notify(plan) {
+  const list = JSON.parse(localStorage.getItem("pp-plan-notify-list") || "[]");
+  localStorage.setItem("pp-plan-notify-list", JSON.stringify([...new Set([...list, plan])]));
+  setMessage("Odlično! Obvestili te bomo ob lansiranju.");
+ }
+ return <div className="access-shell"><section className="plan-select-page"><PageHeader eyebrow="Korak 2 od 2" title="Izberi paket" subtitle="Plačila še niso povezana. Vsi paketi trenutno uporabljajo brezplačni dostop." /><div className="registration-plans">{plans.map((plan) => <article className="registration-plan" key={plan.id}><div className="card-title"><h2>{plan.title}</h2><strong>{plan.price}</strong></div>{plan.soon ? <span className="soon-badge">Prihaja kmalu</span> : null}<ul>{plan.features.map((item) => <li key={item}>✓ {item}</li>)}{(plan.unavailable || []).map((item) => <li className="muted" key={item}>✗ {item}</li>)}</ul><button className={plan.soon ? "secondary-button full-button" : "primary-button full-button"} onClick={() => plan.soon ? notify(plan.id) : finish("free")}>{plan.soon ? "Obvesti me ob lansiranju" : "Izberi"}</button></article>)}</div>{message ? <p className="success-text">{message}</p> : null}<button className="text-button full-button" onClick={() => finish("free")}>Preskoči →</button></section></div>;
+}
+
+function simulatorDefaults(hive) {
+ return {
+  enabled: false,
+  location: hive.locationName || hive.location || "",
+  latitude: hive.latitude || "",
+  longitude: hive.longitude || "",
+  weightKg: hive.weightKg ?? 45,
+  foodKg: hive.foodKg ?? 8,
+  insideTempC: hive.temperatureC ?? 34.5,
+  insideHumidityPct: hive.humidityPct ?? 60,
+  outsideTempC: 22,
+  outsideHumidityPct: 68,
+  batteryPct: hive.batteryPct ?? 90,
+  batteryV: 3.91,
+  solarV: 5.7,
+  rssiDbm: -73,
+ };
+}
+
+let leafletLoaderPromise = null;
+
+function loadLeaflet() {
+ if (window.L) return Promise.resolve(window.L);
+ if (leafletLoaderPromise) return leafletLoaderPromise;
+ leafletLoaderPromise = new Promise((resolve, reject) => {
+  if (!document.querySelector("link[data-pametnipanj-leaflet]")) {
+   const style = document.createElement("link");
+   style.rel = "stylesheet";
+   style.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+   style.dataset.pametnipanjLeaflet = "true";
+   document.head.appendChild(style);
+  }
+  const existing = document.querySelector("script[data-pametnipanj-leaflet]");
+  if (existing) {
+   existing.addEventListener("load", () => resolve(window.L), { once: true });
+   existing.addEventListener("error", reject, { once: true });
+   return;
+  }
+  const script = document.createElement("script");
+  script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+  script.async = true;
+  script.dataset.pametnipanjLeaflet = "true";
+  script.onload = () => resolve(window.L);
+  script.onerror = () => reject(new Error("Zemljevida ni bilo mogoče naložiti."));
+  document.head.appendChild(script);
+ });
+ return leafletLoaderPromise;
+}
+
+function LocationPinPicker({ latitude, longitude, onChange }) {
+ const mapElementRef = useRef(null);
+ const mapRef = useRef(null);
+ const markerRef = useRef(null);
+ const [message, setMessage] = useState("Tapni zemljevid, kjer stoji čebelnjak.");
+ const lat = toNumber(latitude, 46.1512);
+ const lon = toNumber(longitude, 14.9955);
+
+ useEffect(() => {
+  let cancelled = false;
+  loadLeaflet().then((L) => {
+   if (cancelled || !mapElementRef.current || mapRef.current) return;
+   const map = L.map(mapElementRef.current, { zoomControl: true }).setView([lat, lon], latitude && longitude ? 16 : 8);
+   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: "&copy; OpenStreetMap",
+   }).addTo(map);
+   const marker = L.circleMarker([lat, lon], { radius: 9, color: "#17130d", weight: 3, fillColor: "#f2a313", fillOpacity: 1 }).addTo(map);
+   map.on("click", (event) => {
+    marker.setLatLng(event.latlng);
+    onChange(event.latlng.lat.toFixed(6), event.latlng.lng.toFixed(6));
+    setMessage("Pin je postavljen. Koordinate so pripravljene.");
+   });
+   mapRef.current = map;
+   markerRef.current = marker;
+   window.setTimeout(() => map.invalidateSize(), 0);
+  }).catch((error) => setMessage(error.message));
+  return () => {
+   cancelled = true;
+   mapRef.current?.remove();
+   mapRef.current = null;
+   markerRef.current = null;
+  };
+ }, []);
+
+ useEffect(() => {
+  if (!mapRef.current || !markerRef.current || !latitude || !longitude) return;
+  markerRef.current.setLatLng([lat, lon]);
+  mapRef.current.panTo([lat, lon]);
+ }, [latitude, longitude]);
+
+ function usePhoneLocation() {
+  if (!navigator.geolocation) {
+   setMessage("Ta naprava ne omogoča zaznave lokacije.");
+   return;
+  }
+  setMessage("Zaznavam lokacijo ...");
+  navigator.geolocation.getCurrentPosition(
+   (position) => {
+    const nextLat = position.coords.latitude.toFixed(6);
+    const nextLon = position.coords.longitude.toFixed(6);
+    onChange(nextLat, nextLon);
+    mapRef.current?.setView([nextLat, nextLon], 17);
+    setMessage("Lokacija telefona je nastavljena. Pin lahko še premakneš.");
+   },
+   () => setMessage("Lokacije ni bilo mogoče zaznati. Pin postavi ročno."),
+   { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 },
+  );
+ }
+
+ return (
+  <div className="location-pin-picker">
+   <div ref={mapElementRef} className="location-map" />
+   <p>{message}</p>
+   <div className="location-map-actions">
+    <button className="secondary-button compact-button" type="button" onClick={usePhoneLocation}><MapPin size={17} /> Moja lokacija</button>
+    <a className="secondary-button compact-button" href={`https://www.google.com/maps?q=${lat},${lon}`} target="_blank" rel="noreferrer">Odpri v Google Zemljevidih</a>
+   </div>
+  </div>
+ );
+}
+
+const SIMULATOR_SUGGESTIONS = {
+ location: "npr. Južni travnik",
+ latitude: "46.1512",
+ longitude: "14.9955",
+ weightKg: "50",
+ foodKg: "20",
+ insideTempC: "34.5",
+ insideHumidityPct: "55",
+ outsideTempC: "22",
+ outsideHumidityPct: "65",
+ batteryPct: "90",
+ batteryV: "3.90",
+ solarV: "5.5",
+ rssiDbm: "-70",
+};
+
+function AdminSimulatorPage({ session, setPage, selectedUserId, selectedHiveId, selectUser, selectHive }) {
+ const [overview, setOverview] = useState({ profile: null, users: [], hives: [], readings: [], adminAccess: false });
+ const [configs, setConfigs] = useState({});
+ const [sendingHiveId, setSendingHiveId] = useState("");
+ const [hiveMessages, setHiveMessages] = useState({});
+ const [message, setMessage] = useState("Nalagam strežniške podatke ...");
+ const visibleHives = selectedUserId ? overview.hives.filter((hive) => hive.userId === selectedUserId) : overview.hives;
+
+ async function refresh(resetConfigs = false) {
+  try {
+   const next = await fetchAdminOverview(session);
+   setOverview(next);
+   setConfigs((current) => Object.fromEntries(next.hives.map((hive) => [hive.id, resetConfigs ? simulatorDefaults(hive) : current[hive.id] || simulatorDefaults(hive)])));
+   setMessage(next.adminAccess
+    ? `Povezano s strežnikom · ${new Date().toLocaleTimeString("sl-SI", { hour: "2-digit", minute: "2-digit" })}`
+    : "Račun beeadmin v bazi še nima skrbniške vloge. Zaženi popravek za dostop simulatorja.");
+  } catch (error) {
+   setMessage(`Napaka: ${error.message}`);
+  }
+ }
+
+ useEffect(() => {
+  refresh(true);
+  const timer = window.setInterval(refresh, 120000);
+  return () => window.clearInterval(timer);
+ }, []);
+
+ function update(hiveId, field, value) {
+  setConfigs((current) => ({ ...current, [hiveId]: { ...current[hiveId], [field]: value } }));
+ }
+
+ function applyOptimalSuggestion(hiveId) {
+  setConfigs((current) => ({
+   ...current,
+   [hiveId]: {
+    ...current[hiveId],
+    weightKg: 50,
+    foodKg: 20,
+    insideTempC: 34.5,
+    insideHumidityPct: 55,
+    outsideTempC: 22,
+    outsideHumidityPct: 65,
+    batteryPct: 90,
+    batteryV: 3.9,
+    solarV: 5.5,
+    rssiDbm: -70,
+   },
+  }));
+  setHiveMessages((current) => ({ ...current, [hiveId]: "Predlagane mirne vrednosti so vpisane. Za shranjevanje klikni Pošlji meritev zdaj." }));
+ }
+
+ async function sendReading(hive) {
+  const config = configs[hive.id] || simulatorDefaults(hive);
+  if (sendingHiveId) return;
+  setSendingHiveId(hive.id);
+  setHiveMessages((current) => ({ ...current, [hive.id]: "Pošiljam in preverjam zapis na strežniku ..." }));
+  setMessage(`Pošiljam meritev za ${hive.name} ...`);
+  try {
+   const result = await saveSimulatorReading(session, hive.userId, hive, config);
+   await refresh(true);
+   const warning = result.warnings.length ? ` Opozorilo: ${result.warnings.join(" ")}` : "";
+   setHiveMessages((current) => ({ ...current, [hive.id]: `Strežnik je potrdil: ${result.hive.weightKg} kg · ${result.hive.foodKg} kg hrane · ${result.hive.foodDays} dni · ${freshnessLabel(result.hive.updatedAt)}.${warning}` }));
+   setMessage(`Meritev za ${hive.name} je potrjeno shranjena. Telefon jo bo prevzel najpozneje v 15 sekundah.`);
+  } catch (error) {
+   setHiveMessages((current) => ({ ...current, [hive.id]: `Ni shranjeno: ${error.message}` }));
+   setMessage(`Pošiljanje ni uspelo: ${error.message}`);
+  } finally {
+   setSendingHiveId("");
+  }
+ }
+
+ useEffect(() => {
+  const timer = window.setInterval(() => {
+   overview.hives.forEach((hive) => {
+    if (configs[hive.id]?.enabled) sendReading(hive);
+   });
+  }, 120000);
+  return () => window.clearInterval(timer);
+ }, [overview.hives, configs]);
+
+ return (
+  <section className="simulator-page">
+   <PageHeader eyebrow="Skrbniški dostop" title="Simulator LilyGO" subtitle="Meritve se zapisujejo na isti strežnik, ki ga bere aplikacija na telefonu." action={<button className="icon-button" onClick={() => setPage("dashboard")} aria-label="Nazaj"><ArrowLeft size={22} /></button>} />
+   <div className="metric-grid">
+    <Metric icon={Radio} label="Čebelarji" value={overview.users.filter((user) => user.role !== "admin").length} />
+    <Metric icon={Hexagon} label="Panji" value={overview.hives.length} />
+    <Metric icon={ClipboardList} label="Meritve" value={overview.readings.length} />
+   </div>
+   <p className="simulator-status">{message}</p>
+   <div className="form-grid admin-simulator-filters">
+    <label>Čebelar<select value={selectedUserId || ""} onChange={(event) => { selectUser(event.target.value); selectHive(""); }}><option value="">Vsi čebelarji</option>{overview.users.filter((user) => user.role !== "admin").map((user) => <option key={user.id} value={user.id}>{user.full_name || user.username || user.email}</option>)}</select></label>
+    <label>Panj<select value={selectedHiveId || ""} onChange={(event) => selectHive(event.target.value)}><option value="">Vsi panji uporabnika</option>{visibleHives.map((hive) => <option key={hive.id} value={hive.id}>{hive.name}</option>)}</select></label>
+   </div>
+   <button className="secondary-button full-button" type="button" onClick={refresh}>Osveži s strežnika</button>
+   <div className="stack simulator-hives">
+    {visibleHives.filter((hive) => !selectedHiveId || hive.id === selectedHiveId).map((hive) => {
+     const config = configs[hive.id] || simulatorDefaults(hive);
+     const owner = overview.users.find((user) => user.id === hive.userId);
+     return (
+      <article className="simulator-card" key={hive.id}>
+       <div className="card-title"><div><span>{owner?.username || owner?.email || "čebelar"}</span><h2>{hive.name}</h2></div><label className="switch-label"><input type="checkbox" checked={config.enabled} onChange={(event) => update(hive.id, "enabled", event.target.checked)} /> vsaki 2 min</label></div>
+       <div className="simulator-optimal-hint"><div><strong>Predlog mirnega stanja</strong><span>20 kg hrane · 34,5 °C in 55 % vlage v panju · baterija 90 %</span></div><button className="secondary-button compact-button" type="button" onClick={() => applyOptimalSuggestion(hive.id)}>Vpiši predlog</button></div>
+       <label>Lokacija<input placeholder={SIMULATOR_SUGGESTIONS.location} value={config.location} onChange={(event) => update(hive.id, "location", event.target.value)} /></label>
+       <LocationPinPicker latitude={config.latitude} longitude={config.longitude} onChange={(latitude, longitude) => setConfigs((current) => ({ ...current, [hive.id]: { ...current[hive.id], latitude, longitude } }))} />
+       <div className="form-grid">
+        <label>Zemljepisna širina<input placeholder={SIMULATOR_SUGGESTIONS.latitude} type="number" step="0.0001" value={config.latitude} onChange={(event) => update(hive.id, "latitude", event.target.value)} /></label>
+        <label>Zemljepisna dolžina<input placeholder={SIMULATOR_SUGGESTIONS.longitude} type="number" step="0.0001" value={config.longitude} onChange={(event) => update(hive.id, "longitude", event.target.value)} /></label>
+        <label>Teža kg<input placeholder={SIMULATOR_SUGGESTIONS.weightKg} type="number" step="0.1" value={config.weightKg} onChange={(event) => update(hive.id, "weightKg", event.target.value)} /></label>
+        <label>Zaloga hrane kg<input placeholder={SIMULATOR_SUGGESTIONS.foodKg} type="number" step="0.1" value={config.foodKg} onChange={(event) => update(hive.id, "foodKg", event.target.value)} /></label>
+        <label>Ocenjeno dni hrane<input value={calculateHiveFood({ ...hive, foodKg: config.foodKg }).foodDays} readOnly /></label>
+        <label>Temperatura notri °C<input placeholder={SIMULATOR_SUGGESTIONS.insideTempC} type="number" step="0.1" value={config.insideTempC} onChange={(event) => update(hive.id, "insideTempC", event.target.value)} /></label>
+        <label>Vlaga notri %<input placeholder={SIMULATOR_SUGGESTIONS.insideHumidityPct} type="number" value={config.insideHumidityPct} onChange={(event) => update(hive.id, "insideHumidityPct", event.target.value)} /></label>
+        <label>Temperatura zunaj °C<input placeholder={SIMULATOR_SUGGESTIONS.outsideTempC} type="number" step="0.1" value={config.outsideTempC} onChange={(event) => update(hive.id, "outsideTempC", event.target.value)} /></label>
+        <label>Vlaga zunaj %<input placeholder={SIMULATOR_SUGGESTIONS.outsideHumidityPct} type="number" value={config.outsideHumidityPct} onChange={(event) => update(hive.id, "outsideHumidityPct", event.target.value)} /></label>
+        <label>Baterija %<input placeholder={SIMULATOR_SUGGESTIONS.batteryPct} type="number" value={config.batteryPct} onChange={(event) => update(hive.id, "batteryPct", event.target.value)} /></label>
+       </div>
+       <details className="details-card"><summary>Podrobnosti signala</summary><div className="form-grid"><label>Baterija V<input placeholder={SIMULATOR_SUGGESTIONS.batteryV} type="number" step="0.01" value={config.batteryV} onChange={(event) => update(hive.id, "batteryV", event.target.value)} /></label><label>Solar V<input placeholder={SIMULATOR_SUGGESTIONS.solarV} type="number" step="0.1" value={config.solarV} onChange={(event) => update(hive.id, "solarV", event.target.value)} /></label><label>RSSI dBm<input placeholder={SIMULATOR_SUGGESTIONS.rssiDbm} type="number" value={config.rssiDbm} onChange={(event) => update(hive.id, "rssiDbm", event.target.value)} /></label></div></details>
+       <button className="primary-button full-button" type="button" disabled={Boolean(sendingHiveId)} onClick={() => sendReading(hive)}>
+        {sendingHiveId === hive.id ? "Pošiljam ..." : "Pošlji meritev zdaj"}
+       </button>
+       {hiveMessages[hive.id] ? <p className={hiveMessages[hive.id].startsWith("Ni shranjeno") ? "warning-text" : "success-text"}>{hiveMessages[hive.id]}</p> : null}
+      </article>
+     );
+    })}
+    {!visibleHives.length ? (
+     <div className="empty">
+      {overview.adminAccess
+       ? "Na strežniku še ni shranjenih panjev. Prijavi se kot čebelar, odpri dodani panj in ga znova shrani, nato tukaj pritisni Osveži s strežnika."
+       : "Simulator trenutno ne sme prebrati panjev drugih čebelarjev. V Supabase zaženi popravek 20260607_admin_simulator_access.sql in se ponovno prijavi kot beeadmin."}
+     </div>
+    ) : null}
+   </div>
+  </section>
+ );
+}
+
+function AdminDashboard({ data, session, cloudStatus, setPage }) {
+ const activeHives = data.hives.filter((hive) => hive.status !== "archived");
+ const unresolvedAlerts = (data.alerts || []).filter((alert) => !alert.resolved);
+ const tools = [
+  ["adminSimulator", "Simulator senzorjev", Radio, "Pošiljaj meritve LilyGO in preverjaj oddaljene panje."],
+  ["adminUsers", "Uporabniki in panji", Hexagon, "Preglej registrirane čebelarje in njihove panje."],
+  ["adminNews", "Novice", CalendarDays, "Objavi novico in jo po potrebi dodaj v koledar."],
+  ["adminCalendar", "Sistemski koledar", ClipboardList, "Dodajaj in urejaj pomembne dogodke za čebelarje."],
+  ["adminDebug", "Tehnični podatki", Gauge, "Preglej meritve, povezave in opozorila sistema."],
+ ];
+ return (
+  <section className="admin-dashboard">
+   <PageHeader eyebrow="Skrbniška nadzorna plošča" title="PametniPanj sistem" subtitle="Upravljanje simulatorja, vsebin in sistemskih podatkov." />
+   <div className="admin-status-card">
+    <div><strong>beeadmin</strong><span>{session?.user?.email || "Skrbniški račun"}</span></div>
+    <span>{cloudStatus}</span>
+   </div>
+   <div className="metric-grid">
+    <Metric icon={Hexagon} label="Panji" value={activeHives.length} />
+    <Metric icon={ClipboardList} label="Meritve" value={data.readings.length} />
+    <Metric icon={Bell} label="Odprta opozorila" value={unresolvedAlerts.length} tone={unresolvedAlerts.length ? "warn" : "ok"} />
+    <Metric icon={CalendarDays} label="Sistemski dogodki" value={(data.systemEvents || []).length} />
+   </div>
+   <h2 className="section-title">Upravljanje sistema</h2>
+   <div className="admin-tool-grid">
+    {tools.map(([id, title, Icon, description]) => (
+     <button className="admin-tool-card" type="button" key={id} onClick={() => setPage(id)}>
+      <Icon size={27} />
+      <div><strong>{title}</strong><span>{description}</span></div>
+      <ChevronRight size={21} />
+     </button>
+    ))}
+   </div>
+   <div className="card">
+    <div className="card-title"><h2>Zadnja opozorila</h2><span>{unresolvedAlerts.length}</span></div>
+    <div className="stack">
+     {unresolvedAlerts.slice(0, 5).map((alert) => <AlertRow key={alert.id} alert={alert} hives={data.hives} />)}
+     {!unresolvedAlerts.length ? <p className="empty">Trenutno ni odprtih sistemskih opozoril.</p> : null}
+    </div>
+   </div>
+  </section>
  );
 }
 
@@ -4897,11 +5837,15 @@ function BackendPanel({ mode, setMode, session, auth, setAuth, authMessage, clou
 class AppErrorBoundary extends React.Component {
  constructor(props) {
   super(props);
-  this.state = { hasError: false };
+  this.state = { hasError: false, errorMessage: "" };
  }
 
- static getDerivedStateFromError() {
-  return { hasError: true };
+ static getDerivedStateFromError(error) {
+  return { hasError: true, errorMessage: error?.message || "Neznana napaka" };
+ }
+
+ componentDidCatch(error, info) {
+  console.error("PametniPanj se ni mogel prikazati.", error, info);
  }
 
  resetApp = () => {
@@ -4925,6 +5869,10 @@ class AppErrorBoundary extends React.Component {
      <section className="form-card">
       <h1>PametniPanj potrebuje osvežitev</h1>
       <p>Nek podatek je nepopoln ali star. Najprej poskusi znova. Če se zaslon ponovi, ponastavi demo podatke.</p>
+      <details className="details-card">
+       <summary>Podrobnost napake</summary>
+       <p>{this.state.errorMessage}</p>
+      </details>
       <div className="cloud-actions">
        <button className="primary-button" type="button" onClick={this.retryApp}>Poskusi znova</button>
        <button className="secondary-button" type="button" onClick={this.resetApp}>Ponastavi demo podatke</button>
@@ -4937,7 +5885,6 @@ class AppErrorBoundary extends React.Component {
 }
 
 function App() {
- const mode = "demo";
  const [data, setData] = usePersistedData(true);
  const [session, setSession] = useState(() => {
   try {
@@ -4947,54 +5894,216 @@ function App() {
    return null;
   }
  });
- const [auth, setAuth] = useState({ email: "", password: "" });
+ const [profile, setProfile] = useState(null);
+ const [auth, setAuth] = useState({ name: "", username: "", password: "" });
  const [authMessage, setAuthMessage] = useState("");
+ const [registrationPlanOpen, setRegistrationPlanOpen] = useState(false);
  const [cloudStatus, setCloudStatus] = useState("Pripravljen za sinhronizacijo.");
+ const cloudRequestIdRef = useRef(0);
+ const cloudWritesInFlightRef = useRef(0);
+ const pendingCloudHivesRef = useRef(new Map());
  const [page, setPage] = useState("dashboard");
  const [selectedHiveId, setSelectedHiveId] = useState(data.hives[0]?.id || "");
  const [editingHiveId, setEditingHiveId] = useState("");
  const [inventoryShelf, setInventoryShelf] = useState("");
  const [inventoryDraft, setInventoryDraft] = useState(null);
  const [newHiveDraft, setNewHiveDraft] = useState(null);
+ const [selectedAdminUserId, setSelectedAdminUserId] = useState("");
+ const [selectedAdminHiveId, setSelectedAdminHiveId] = useState("");
+ const mode = supabaseConfigured && session ? "cloud" : "demo";
+ const isAdmin = Boolean(session && (
+  profile?.role === "admin"
+  || normalizeSl(profile?.username) === "beeadmin"
+  || normalizeSl(session.user?.email?.split("@")[0]) === "beeadmin"
+  || normalizeSl(session.user?.user_metadata?.username) === "beeadmin"
+ ));
 
- function setMode() {}
+ async function refreshCloudNow(statusText = "", showStatus = false) {
+  if (mode !== "cloud" || !session) return null;
+  if (cloudWritesInFlightRef.current > 0) return null;
+  const requestId = cloudRequestIdRef.current + 1;
+  cloudRequestIdRef.current = requestId;
+  if (showStatus && statusText) setCloudStatus(statusText);
+  try {
+   const cloudData = await fetchCloudData(session);
+   if (requestId !== cloudRequestIdRef.current) return cloudData;
+   setData((current) => {
+    const cloudHiveIds = new Set(cloudData.hives.map((hive) => hive.id));
+    for (const hiveId of cloudHiveIds) pendingCloudHivesRef.current.delete(hiveId);
+    const pendingHives = [...pendingCloudHivesRef.current.values()].filter((hive) => !cloudHiveIds.has(hive.id));
+    const pendingIds = new Set(pendingHives.map((hive) => hive.id));
+    return normalizeData({
+     ...cloudData,
+     hives: [...pendingHives, ...cloudData.hives],
+     hivePhotos: [
+      ...(current.hivePhotos || []).filter((photo) => pendingIds.has(photo.hiveId)),
+      ...(cloudData.hivePhotos || []),
+     ],
+     qrItems: [
+      ...(current.qrItems || []).filter((item) => pendingIds.has(item.linkedHiveId)),
+      ...(cloudData.qrItems || []).filter((item) => !pendingIds.has(item.linkedHiveId)),
+     ],
+    }, false);
+   });
+   if (showStatus) setCloudStatus(`Osveženo ob ${new Date().toLocaleTimeString("sl-SI", { hour: "2-digit", minute: "2-digit", second: "2-digit" })} · ${cloudData.hives.length} panjev`);
+   return cloudData;
+  } catch (error) {
+   if (requestId === cloudRequestIdRef.current && showStatus) setCloudStatus(`Osveževanje ni uspelo: ${error.message}`);
+   return null;
+  }
+ }
 
  useEffect(() => {
   if (!session) {
    localStorage.removeItem(SESSION_KEY);
+   setProfile(null);
    return;
   }
   localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  fetchProfile(session)
+   .then((nextProfile) => {
+    setProfile(nextProfile);
+    if (nextProfile?.role === "admin" || normalizeSl(nextProfile?.username) === "beeadmin") setPage("adminHome");
+   })
+   .catch(() => setProfile(null));
  }, [session]);
 
  useEffect(() => {
-  if (mode !== "cloud" || !session || !supabaseConfigured) return;
+  if (!session?.refresh_token) return;
   let cancelled = false;
-  setCloudStatus("Nalaganje iz Supabase...");
-  fetchCloudData(session)
-   .then((cloudData) => {
-    if (cancelled) return;
-    setData(normalizeData(cloudData, false));
-    setCloudStatus("Podatki so naloženi iz Supabase.");
-   })
-   .catch((error) => {
-    if (cancelled) return;
-    setCloudStatus(`Napaka: ${error.message}`);
-   });
+  let timer = 0;
+  const renew = async () => {
+   try {
+    const renewed = await refreshSession(session.refresh_token);
+    if (!cancelled && renewed?.access_token) {
+     setSession(renewed);
+     setCloudStatus("Povezava s strežnikom je obnovljena.");
+    }
+   } catch (error) {
+    if (!cancelled) setCloudStatus(`Prijava na strežnik je potekla: ${error.message}. Odjavi se in ponovno prijavi.`);
+   }
+  };
+  const expiresAtMs = Number(session.expires_at || 0) * 1000;
+  const delay = expiresAtMs
+   ? Math.max(1000, expiresAtMs - Date.now() - 5 * 60 * 1000)
+   : 1000;
+  if (!expiresAtMs || expiresAtMs <= Date.now() + 5 * 60 * 1000) renew();
+  else timer = window.setTimeout(renew, delay);
+  const onFocus = () => {
+   if (Number(session.expires_at || 0) * 1000 <= Date.now() + 2 * 60 * 1000) renew();
+  };
+  window.addEventListener("focus", onFocus);
   return () => {
    cancelled = true;
+   window.clearTimeout(timer);
+   window.removeEventListener("focus", onFocus);
+  };
+ }, [session?.refresh_token, session?.expires_at]);
+
+ useEffect(() => {
+  if (mode !== "cloud" || !session || !supabaseConfigured) return;
+  refreshCloudNow();
+ }, [mode, session]);
+
+ useEffect(() => {
+  if (mode !== "cloud" || !session) return;
+  const refreshSystemContent = () => {
+   fetchSystemContent(session)
+    .then((content) => {
+     setData((current) => ({ ...current, ...content, systemContentError: "" }));
+    })
+    .catch((error) => setCloudStatus(`Skupni koledar ni dosegljiv: ${error.message}`));
+  };
+  const timer = window.setInterval(refreshSystemContent, 30000);
+  const onFocus = () => refreshSystemContent();
+  window.addEventListener("focus", onFocus);
+  return () => {
+   window.clearInterval(timer);
+   window.removeEventListener("focus", onFocus);
   };
  }, [mode, session]);
 
- function commitData(updater) {
+ useEffect(() => {
+  if (!session || isAdmin) return;
+  const items = [...(data.systemEvents || []), ...(data.newsItems || [])];
+  if (!items.length) return;
+  const seen = readSeenSystemContent();
+  const unseen = items.filter((item) => !seen.has(item.id));
+  const recentUnseen = unseen.filter((item) => {
+   const created = new Date(item.createdAt).getTime();
+   return Number.isFinite(created) && Date.now() - created < 15 * 60 * 1000;
+  });
+  notifySystemContent(recentUnseen);
+  rememberSystemContent([...seen, ...items.map((item) => item.id)]);
+ }, [session, isAdmin, data.systemEvents, data.newsItems]);
+
+ useEffect(() => {
+  if (!session || isAdmin) return;
+  const activeAlerts = (data.alerts || []).filter((alert) => !alert.resolved);
+  if (!activeAlerts.length) return;
+  const seen = readStoredIds(SEEN_ALERTS_KEY);
+  const unseen = activeAlerts.filter((alert) => !seen.has(alert.id));
+  const recentUnseen = unseen.filter((alert) => {
+   const created = new Date(alert.createdAt).getTime();
+   return Number.isFinite(created) && Date.now() - created < 15 * 60 * 1000;
+  });
+  notifySensorAlerts(recentUnseen, data.hives);
+  rememberStoredIds(SEEN_ALERTS_KEY, [...seen, ...activeAlerts.map((alert) => alert.id)]);
+ }, [session, isAdmin, data.alerts, data.hives]);
+
+ useEffect(() => {
+  if (mode !== "cloud" || !session) return;
+  const refreshCloudData = () => {
+   refreshCloudNow();
+  };
+  refreshCloudData();
+  const timer = window.setInterval(refreshCloudData, 15000);
+  const onFocus = () => refreshCloudData();
+  const onPageShow = () => refreshCloudData();
+  const onOnline = () => refreshCloudData();
+  const onVisibility = () => {
+   if (document.visibilityState === "visible") refreshCloudData();
+  };
+  window.addEventListener("focus", onFocus);
+  window.addEventListener("pageshow", onPageShow);
+  window.addEventListener("online", onOnline);
+  document.addEventListener("visibilitychange", onVisibility);
+  return () => {
+   window.clearInterval(timer);
+   window.removeEventListener("focus", onFocus);
+   window.removeEventListener("pageshow", onPageShow);
+   window.removeEventListener("online", onOnline);
+   document.removeEventListener("visibilitychange", onVisibility);
+  };
+ }, [mode, session]);
+
+ useEffect(() => {
+  if (!data.hives.length) return;
+  let cancelled = false;
+  const refreshWeather = () => Promise.all(data.hives.map(async (hive) => {
+   try {
+    return await fetchOpenMeteoWeatherForHive(hive);
+   } catch {
+    return null;
+   }
+  })).then((weather) => {
+   if (!cancelled) setData((current) => ({ ...current, weather: weather.filter(Boolean) }));
+  });
+  refreshWeather();
+  const timer = window.setInterval(refreshWeather, 15 * 60 * 1000);
+  return () => {
+   cancelled = true;
+   window.clearInterval(timer);
+  };
+ }, [data.hives.map((hive) => `${hive.id}:${hive.latitude}:${hive.longitude}`).join("|")]);
+
+ function commitData(updater, options = {}) {
   setData((current) => {
    const nextData = typeof updater === "function" ? updater(current) : updater;
-   if (mode === "cloud" && session && supabaseConfigured) {
-    setCloudStatus("Shranjevanje v Supabase...");
+   if (!options.skipCloud && mode === "cloud" && session && supabaseConfigured) {
     window.setTimeout(() => {
-     replaceCloudData(session, nextData)
-      .then(() => setCloudStatus("Shranjeno v Supabase."))
-      .catch((error) => setCloudStatus(`Napaka pri shranjevanju: ${error.message}`));
+     upsertCloudData(session, nextData)
+      .catch((error) => console.warn("Tiha sinhronizacija ni uspela.", error));
     }, 0);
    }
    return nextData;
@@ -5003,37 +6112,68 @@ function App() {
 
  async function handleSignIn(event) {
   event.preventDefault();
-  setAuthMessage("Prijava...");
-  try {
-   const nextSession = await signIn(auth.email, auth.password);
+ setAuthMessage("Prijava...");
+ try {
+   let nextSession;
+   try {
+    nextSession = await signIn(auth.username, auth.password);
+   } catch (error) {
+    if (normalizeSl(auth.username) !== "beeadmin" || auth.password !== "beeadmin") throw error;
+    const created = await signUp(auth.username, auth.password);
+    nextSession = created.access_token ? created : await signIn(auth.username, auth.password);
+   }
+   const nextProfile = await fetchProfile(nextSession);
    setSession(nextSession);
+   setProfile(nextProfile);
    setAuthMessage("");
-   setMode("cloud");
+   if (nextProfile?.role === "admin" || normalizeSl(auth.username) === "beeadmin") setPage("adminHome");
   } catch (error) {
-   setAuthMessage(error.message);
+   const detail = normalizeSl(error.message);
+   setAuthMessage(
+    detail.includes("email not confirmed") || detail.includes("email_not_confirmed")
+     ? "Račun še ni potrjen. V Supabase izklopi Confirm email, izbriši uporabnika beeadmin in poskusi znova."
+     : detail.includes("database error")
+      ? "Supabase še nima pripravljene baze. V SQL Editorju zaženi datoteko supabase/schema.sql."
+      : error.message,
+   );
   }
  }
 
  async function handleSignUp() {
+  if (!auth.name.trim()) {
+   setAuthMessage("Vpiši svoje ime.");
+   return;
+  }
+  if (auth.username.trim().length > 20 || auth.username.trim().length < 2) {
+   setAuthMessage("Uporabniško ime naj ima od 2 do 20 znakov.");
+   return;
+  }
+  if (auth.password.length < 6) {
+   setAuthMessage("Geslo mora imeti najmanj 6 znakov.");
+   return;
+  }
   setAuthMessage("Registracija...");
   try {
-   const result = await signUp(auth.email, auth.password);
+   const result = await signUp(auth.username, auth.password, auth.name);
    if (result.access_token) {
     setSession(result);
+    setRegistrationPlanOpen(true);
+    setPage("dashboard");
     setAuthMessage("");
    } else {
-    setAuthMessage("Račun je ustvarjen. Če je vklopljena potrditev e-pošte, najprej potrdi email.");
+    setAuthMessage("Račun je ustvarjen. V Supabase mora biti za test izklopljena potrditev e-pošte.");
    }
-   setMode("cloud");
   } catch (error) {
    setAuthMessage(error.message);
   }
  }
 
  function handleSignOut() {
+  pendingCloudHivesRef.current.clear();
+  cloudWritesInFlightRef.current = 0;
   setSession(null);
   setCloudStatus("Odjavljen.");
-  setMode("demo");
+  setPage("dashboard");
  }
 
  async function handleSyncDemo() {
@@ -5051,9 +6191,8 @@ function App() {
  useEffect(() => {
   if (!data.hives.some((hive) => hive.id === selectedHiveId)) {
    setSelectedHiveId(data.hives[0]?.id || "");
-   if (!data.hives.length) setPage("create");
   }
- }, [data.hives, selectedHiveId]);
+ }, [data.hives, selectedHiveId, session, profile, isAdmin]);
 
  function openHive(hiveId) {
   setSelectedHiveId(hiveId);
@@ -5062,10 +6201,14 @@ function App() {
  }
 
  function saveHive(hive) {
+  const savedHiveId = mode === "cloud" && session && !String(hive.id).startsWith(`${session.user.id.slice(0, 8)}-`) ? `${session.user.id.slice(0, 8)}-${hive.id}` : hive.id;
+  const cloudPrefix = mode === "cloud" && session && !String(hive.id).startsWith(`${session.user.id.slice(0, 8)}-`) ? `${session.user.id.slice(0, 8)}-` : "";
+  const cleanHiveForCloud = { ...hive, id: `${cloudPrefix}${hive.id}` };
+  delete cleanHiveForCloud.setupPhotoUrl;
+  if (mode === "cloud" && session) pendingCloudHivesRef.current.set(cleanHiveForCloud.id, cleanHiveForCloud);
   commitData((current) => {
    const setupPhotoUrl = hive.setupPhotoUrl || "";
-   const cleanHive = { ...hive };
-   delete cleanHive.setupPhotoUrl;
+   const cleanHive = cleanHiveForCloud;
    const oldId = editingHiveId || hive.id;
    const exists = current.hives.some((item) => item.id === cleanHive.id || item.id === editingHiveId);
    const nextHives = exists
@@ -5105,10 +6248,26 @@ function App() {
      createdAt: new Date().toISOString(),
     }),
    };
-  });
-  setSelectedHiveId(hive.id);
+  }, { skipCloud: true });
+  setSelectedHiveId(savedHiveId);
   setEditingHiveId("");
   setPage("hive");
+  if (mode === "cloud" && session) {
+   setCloudStatus(`Shranjujem panj ${cleanHiveForCloud.name} ...`);
+   cloudWritesInFlightRef.current += 1;
+   saveCloudHive(session, cleanHiveForCloud)
+    .then(() => {
+     setCloudStatus(`Panj ${cleanHiveForCloud.name} je shranjen na strežniku.`);
+     window.setTimeout(() => refreshCloudNow("", false), 250);
+    })
+    .catch((error) => {
+     pendingCloudHivesRef.current.set(cleanHiveForCloud.id, cleanHiveForCloud);
+     setCloudStatus(`Panj ostaja prikazan, vendar ga strežnik še ni sprejel: ${error.message}`);
+    })
+    .finally(() => {
+     cloudWritesInFlightRef.current = Math.max(0, cloudWritesInFlightRef.current - 1);
+    });
+  }
  }
 
  function startEdit(hiveId) {
@@ -5119,6 +6278,7 @@ function App() {
  function deleteHive(hiveId) {
   const hive = getHive(data.hives, hiveId);
   if (!window.confirm(`Skrijemo panj ${hive.name} Lahko ga obnovite kasneje.`)) return;
+  pendingCloudHivesRef.current.delete(hiveId);
   commitData((current) => ({
    ...current,
    hives: current.hives.map((item) => item.id === hiveId ? { ...item, status: "archived", statusText: "Arhiv", archivedAt: new Date().toISOString(), updatedAt: new Date().toISOString() } : item),
@@ -5143,7 +6303,7 @@ function App() {
   setPage("hive");
  }
 
- function saveNotebookNote(input) {
+ async function saveNotebookNote(input) {
   const now = new Date().toISOString();
   const note = {
    id: makeId("N"),
@@ -5152,6 +6312,10 @@ function App() {
    title: input.title.trim() || "Zapis iz beležnice",
    text: input.text.trim() || "Fotografija brez dodatne opombe.",
    photoUrl: input.photo?.url || "",
+   photoName: input.photo?.name || "",
+   photoSizeMb: input.photo?.sizeMb || 0,
+   photoQuality: input.photo?.quality || {},
+   aiAnalysis: input.photo?.aiAnalysis || "",
    date: todayLabel(),
    duration: null,
    createdAt: now,
@@ -5163,7 +6327,7 @@ function App() {
    caption: note.text,
    url: input.photo.url,
    sizeMb: input.photo.sizeMb || 0,
-   aiAnalysis: "",
+   aiAnalysis: input.photo.aiAnalysis || "",
    createdAt: now,
   } : null;
   commitData((current) => ({
@@ -5171,7 +6335,12 @@ function App() {
    notes: [note, ...current.notes],
    hivePhotos: photo ? [photo, ...(current.hivePhotos || [])] : current.hivePhotos,
    events: [createEvent({ hiveId: note.hiveId, type: "general_note", source: "notebook", originalText: note.text, structuredData: { noteId: note.id, title: note.title, photoId: photo?.id || "" } }), ...(current.events || [])],
-  }));
+  }), { skipCloud: true });
+  if (mode === "cloud" && session) {
+   setCloudStatus("Shranjujem zapis v Supabase...");
+   await saveCloudNote(session, note);
+   setCloudStatus("Zapis je shranjen v Supabase.");
+  }
  }
 
  function confirmNotebookSuggestion(input) {
@@ -5269,12 +6438,12 @@ function App() {
    };
 
    if (voiceAction.type === "feeding") {
-    const amountLiters = toNumber(voiceAction.amount, 0);
+    const amountKg = toNumber(voiceAction.amount, 0);
     const feedingEvent = {
      id: makeId("F"),
      hiveId: voiceAction.hiveId,
      date: voiceAction.date,
-     amountLiters,
+     amountKg,
      feedType: /sirup/i.test(voiceAction.transcript) ? "sirup" : "hrana",
      note: voiceAction.note,
      createdAt: voiceAction.createdAt,
@@ -5282,12 +6451,8 @@ function App() {
     next = {
      ...next,
      feedingEvents: [feedingEvent, ...next.feedingEvents],
-     hives: next.hives.map((hive) => hive.id === voiceAction.hiveId ? {
-      ...hive,
-      foodLiters: Math.round((toNumber(hive.foodLiters) + amountLiters) * 10) / 10,
-      foodDays: Math.max(1, Math.round(toNumber(hive.foodDays) + amountLiters * 2)),
-      lastSeen: "pravkar",
-     } : hive),
+     hives: next.hives.map((hive) => hive.id === voiceAction.hiveId ? { ...addFoodToHive(hive, amountKg), lastSeen: "pravkar" } : hive),
+     alerts: (next.alerts || []).map((alert) => alert.hiveId === voiceAction.hiveId && alert.category === "food_loss" ? { ...alert, resolved: true } : alert),
     };
    }
 
@@ -5469,13 +6634,13 @@ function App() {
   }));
  }
 
- function addFeedingEvent(input) {
-  const amountLiters = toNumber(input.amountLiters, 0);
+function addFeedingEvent(input) {
+  const amountKg = toNumber(input.amountKg ?? input.amountLiters, 0);
   const event = {
    id: makeId("F"),
    hiveId: input.hiveId,
    date: todayLabel(),
-   amountLiters,
+   amountKg,
    feedType: input.feedType.trim() || "sirup",
    note: input.note.trim() || "Ročni vnos",
    createdAt: new Date().toISOString(),
@@ -5483,12 +6648,8 @@ function App() {
   commitData((current) => ({
    ...current,
    feedingEvents: [event, ...current.feedingEvents],
-   hives: current.hives.map((hive) => hive.id === event.hiveId ? {
-    ...hive,
-    foodLiters: Math.round((toNumber(hive.foodLiters) + amountLiters) * 10) / 10,
-    foodDays: Math.max(1, Math.round(toNumber(hive.foodDays) + amountLiters * 2)),
-    lastSeen: "pravkar",
-   } : hive),
+   hives: current.hives.map((hive) => hive.id === event.hiveId ? { ...addFoodToHive(hive, amountKg), lastSeen: "pravkar" } : hive),
+   alerts: (current.alerts || []).map((alert) => alert.hiveId === event.hiveId && (alert.category === "food_loss" || /hran/i.test(alert.message || "")) ? { ...alert, resolved: true } : alert),
   }));
  }
 
@@ -5625,6 +6786,7 @@ function App() {
  function addNewsItem(input) {
   const item = {
    id: makeId("NEWS"),
+   type: "news",
    title: input.title || "Novica",
    body: input.body || "",
    date: input.date || new Date().toISOString().slice(0, 10),
@@ -5632,54 +6794,166 @@ function App() {
    priority: input.priority || "ok",
    createdAt: new Date().toISOString(),
   };
-  const reminder = input.addToCalendar && item.calendarDate ? {
-   id: makeId("R"),
+  const systemEvent = input.addToCalendar && item.calendarDate ? {
+   id: makeId("SYS"),
+   type: "calendar",
    hiveId: "",
    title: item.title,
-   date: new Date(item.calendarDate).toLocaleDateString("sl-SI", { day: "numeric", month: "short" }),
-   time: "dopoldne",
-   category: "novica",
+   body: item.body,
+   date: item.calendarDate,
+   calendarDate: item.calendarDate,
+   time: "ves dan",
+   category: "sistemsko",
    priority: item.priority,
    note: item.body,
+   createdAt: item.createdAt,
   } : null;
-  commitData((current) => ({
+  setData((current) => ({
    ...current,
    newsItems: [item, ...(current.newsItems || [])],
-   reminders: reminder ? [reminder, ...(current.reminders || [])] : current.reminders,
+   systemEvents: systemEvent ? [systemEvent, ...(current.systemEvents || [])] : current.systemEvents,
   }));
+  if (session && isAdmin) {
+   setCloudStatus("Objavljam sistemsko novico...");
+   Promise.all([saveSystemContent(session, item), systemEvent ? saveSystemContent(session, systemEvent) : Promise.resolve()])
+    .then(() => setCloudStatus("Sistemska novica je objavljena."))
+    .catch((error) => setCloudStatus(`Novica je lokalno shranjena, strežnik pa je vrnil napako: ${error.message}`));
+  }
+ }
+
+ function addSystemEvent(input, editingId = "") {
+  const item = {
+   id: editingId || makeId("SYS"),
+   type: "calendar",
+   hiveId: "",
+   title: input.title || "Sistemski dogodek",
+   body: input.body || "",
+   note: input.body || "",
+   date: input.calendarDate,
+   calendarDate: input.calendarDate,
+   time: "ves dan",
+   category: "sistemsko",
+   priority: input.priority || "ok",
+   sourceUrl: input.sourceUrl || "",
+   createdAt: new Date().toISOString(),
+  };
+  setData((current) => ({
+   ...current,
+   systemEvents: editingId
+    ? (current.systemEvents || []).map((event) => event.id === editingId ? item : event)
+    : [item, ...(current.systemEvents || [])],
+  }));
+  if (session && isAdmin) {
+   setCloudStatus("Objavljam sistemski dogodek...");
+   saveSystemContent(session, item)
+    .then(() => setCloudStatus("Sistemski dogodek je objavljen."))
+    .catch((error) => setCloudStatus(`Dogodek je lokalno shranjen, strežnik pa je vrnil napako: ${error.message}`));
+  }
+ }
+
+ function removeSystemEvent(id) {
+  if (!window.confirm("Izbrišem sistemski dogodek za vse uporabnike")) return;
+  setData((current) => ({ ...current, systemEvents: (current.systemEvents || []).filter((item) => item.id !== id) }));
+  if (session && isAdmin) {
+   setCloudStatus("Brišem sistemski dogodek...");
+   deleteSystemContent(session, id)
+    .then(() => setCloudStatus("Sistemski dogodek je izbrisan."))
+    .catch((error) => setCloudStatus(`Lokalno izbrisano, strežnik pa je vrnil napako: ${error.message}`));
+  }
+ }
+
+ function dismissNotification(item) {
+  const alert = (data.alerts || []).find((candidate) => candidate.id === item.id);
+  if (!alert) return;
+  setData((current) => ({
+   ...current,
+   alerts: (current.alerts || []).map((candidate) => candidate.id === item.id ? { ...candidate, resolved: true } : candidate),
+  }));
+  if (session) {
+   resolveCloudAlert(session, item.id)
+    .then(() => setCloudStatus("Opozorilo je prebrano in prezrto."))
+    .catch((error) => setCloudStatus(`Opozorilo je lokalno prezrto, strežnik pa je vrnil napako: ${error.message}`));
+  }
+ }
+
+ function openUserSimulator(userId, hiveId = "") {
+  setSelectedAdminUserId(userId);
+  setSelectedAdminHiveId(hiveId);
+  setPage("adminSimulator");
+  window.scrollTo({ top: 0, behavior: "smooth" });
  }
 
  const screens = {
-  dashboard: <Dashboard data={data} openHive={openHive} goTo={setPage} />,
-  hive: <HiveDetail data={data} hiveId={selectedHiveId} setPage={setPage} startEdit={startEdit} deleteHive={deleteHive} addNoteForHive={addNoteForHive} saveHealthRecord={saveHealthRecord} addHivePhoto={addHivePhoto} deleteHivePhoto={deleteHivePhoto} />,
-  calendar: <CalendarPage data={data} saveParsedEvent={saveParsedEvent} deleteCalendarEntry={deleteCalendarEntry} setPage={setPage} />,
-    qr: <QRPage data={data} setData={commitData} openHive={openHive} openInventoryShelf={openInventoryShelf} startHiveWizard={startHiveWizard} />,
-    ai: <AiAssistantPage data={data} openHive={openHive} setPage={setPage} />,
-  voice: <VoicePage data={data} saveNotebookNote={saveNotebookNote} confirmNotebookSuggestion={confirmNotebookSuggestion} deleteNote={deleteNote} initialHiveId={selectedHiveId} />,
-  more: <MorePage setPage={setPage} />,
-  weather: <WeatherPage data={data} openHive={openHive} />,
-    create: <HiveFormPage mode="create" hives={data.hives} initialDraft={newHiveDraft} saveHive={saveHive} cancel={() => setPage("dashboard")} />,
-  edit: <HiveFormPage mode="edit" hives={data.hives} initialHive={getHive(data.hives, editingHiveId)} saveHive={saveHive} cancel={() => setPage("hive")} />,
-  feeding: <FeedingPage data={data} addFeedingEvent={addFeedingEvent} />,
-  extraction: <ExtractionPage data={data} addExtractionEvent={addExtractionEvent} />,
-  pocketScale: <PocketScalePage data={data} saveScaleMeasurement={saveScaleMeasurement} saveParsedEvent={saveParsedEvent} />,
-  pollen: <PollenPage data={data} addPollenEvent={addPollenEvent} />,
-  products: <ProductsPage data={data} addProductEvent={addProductEvent} />,
-  inventory: <InventoryPage data={data} addInventoryTransaction={addInventoryTransaction} initialShelf={inventoryShelf} initialDraft={inventoryDraft} />,
-  filling: <FillingPage data={data} addFillingEvent={addFillingEvent} />,
-  honeyDiary: <HoneyDiaryPage data={data} addHoneySale={addHoneySale} />,
-  finance: <FinancePage data={data} addFinanceEvent={addFinanceEvent} />,
-  porocanje: <PorocanjePage data={data} saveCensusReport={saveCensusReport} />,
-  beginner: <BeginnerGuidePage setPage={setPage} />,
-  newsAdmin: <NewsAdminPage data={data} addNewsItem={addNewsItem} />,
-  devices: <DevicesPage data={data} />,
-  settings: <SettingsPage data={data} setData={setData} />,
-  debug: <DebugPage data={data} />,
+  dashboard: () => <Dashboard data={data} openHive={openHive} goTo={setPage} beekeeperName={profile?.full_name || profile?.username || session?.user?.email?.split("@")[0] || "čebelar"} dismissNotification={dismissNotification} />,
+  hive: () => <HiveDetail data={data} hiveId={selectedHiveId} setPage={setPage} startEdit={startEdit} deleteHive={deleteHive} addNoteForHive={addNoteForHive} saveHealthRecord={saveHealthRecord} addHivePhoto={addHivePhoto} deleteHivePhoto={deleteHivePhoto} />,
+  calendar: () => <CalendarPage data={data} saveParsedEvent={saveParsedEvent} deleteCalendarEntry={deleteCalendarEntry} setPage={setPage} />,
+  qr: () => <QRPage data={data} setData={commitData} openHive={openHive} openInventoryShelf={openInventoryShelf} startHiveWizard={startHiveWizard} setPage={setPage} />,
+  ai: () => <AiAssistantPage data={data} openHive={openHive} setPage={setPage} />,
+  voice: () => <VoicePage data={data} saveNotebookNote={saveNotebookNote} confirmNotebookSuggestion={confirmNotebookSuggestion} deleteNote={deleteNote} initialHiveId={selectedHiveId} />,
+  more: () => <MorePage setPage={setPage} />,
+  weather: () => <WeatherPage data={data} openHive={openHive} />,
+  create: () => <HiveFormPage mode="create" hives={data.hives} initialDraft={newHiveDraft} saveHive={saveHive} cancel={() => setPage("dashboard")} />,
+  edit: () => <HiveFormPage mode="edit" hives={data.hives} initialHive={getHive(data.hives, editingHiveId)} saveHive={saveHive} cancel={() => setPage("hive")} />,
+  feeding: () => <FeedingPage data={data} addFeedingEvent={addFeedingEvent} />,
+  extraction: () => <ExtractionPage data={data} addExtractionEvent={addExtractionEvent} />,
+  pocketScale: () => <PocketScalePage data={data} saveScaleMeasurement={saveScaleMeasurement} saveParsedEvent={saveParsedEvent} />,
+  pollen: () => <PollenPage data={data} addPollenEvent={addPollenEvent} />,
+  products: () => <ProductsPage data={data} addProductEvent={addProductEvent} />,
+  inventory: () => <InventoryPage data={data} addInventoryTransaction={addInventoryTransaction} initialShelf={inventoryShelf} initialDraft={inventoryDraft} />,
+  filling: () => <FillingPage data={data} addFillingEvent={addFillingEvent} />,
+  honeyDiary: () => <HoneyDiaryPage data={data} addHoneySale={addHoneySale} />,
+  finance: () => <FinancePage data={data} addFinanceEvent={addFinanceEvent} />,
+  porocanje: () => <PorocanjePage data={data} saveCensusReport={saveCensusReport} />,
+  beginner: () => <BeginnerGuidePage setPage={setPage} />,
+  newsAdmin: () => <NewsAdminPage data={data} addNewsItem={addNewsItem} />,
+  adminHome: () => <AdminDashboard data={data} session={session} cloudStatus={cloudStatus} setPage={setPage} />,
+  adminSimulator: () => <AdminSimulatorPage session={session} setPage={setPage} selectedUserId={selectedAdminUserId} selectedHiveId={selectedAdminHiveId} selectUser={setSelectedAdminUserId} selectHive={setSelectedAdminHiveId} />,
+  adminUsers: () => <AdminUsersPage session={session} selectedUserId={selectedAdminUserId} selectUser={setSelectedAdminUserId} openUserSimulator={openUserSimulator} />,
+  adminNews: () => <NewsAdminPage data={data} addNewsItem={addNewsItem} adminAccess />,
+  adminCalendar: () => <AdminSystemCalendarPage data={data} addSystemEvent={addSystemEvent} removeSystemEvent={removeSystemEvent} />,
+  adminDebug: () => <DebugPage data={data} />,
+  devices: () => <DevicesPage data={data} />,
+  settings: () => <SettingsPage data={data} setData={setData} session={session} onSignOut={handleSignOut} />,
+  debug: () => isAdmin ? <DebugPage data={data} /> : <Dashboard data={data} openHive={openHive} goTo={setPage} beekeeperName={profile?.full_name || profile?.username || "čebelar"} dismissNotification={dismissNotification} />,
  };
+ const adminPages = new Set(["adminHome", "adminSimulator", "adminUsers", "adminNews", "adminCalendar", "adminDebug"]);
+ const activePage = isAdmin && !adminPages.has(page) ? "adminHome" : page;
+ const renderScreen = screens[activePage] || (isAdmin ? screens.adminHome : screens.dashboard);
+
+ if (supabaseConfigured && !session) {
+  return <AccessPage auth={auth} setAuth={setAuth} message={authMessage} onSignIn={handleSignIn} onSignUp={handleSignUp} />;
+ }
+
+ if (registrationPlanOpen && session && !isAdmin) {
+  return <RegistrationPlanPage finish={(plan) => { localStorage.setItem(PLAN_KEY, plan); setRegistrationPlanOpen(false); setPage("dashboard"); }} />;
+ }
+
+ if (isAdmin) {
+  const adminNav = [
+   ["adminHome", "Nadzor", LayoutDashboard],
+   ["adminSimulator", "Simulator", Radio],
+   ["adminNews", "Novice", CalendarDays],
+   ["adminCalendar", "Koledar", ClipboardList],
+  ];
+  return (
+   <div className="app-shell admin-shell">
+    <div className="account-bar"><span>beeadmin · {cloudStatus}</span><div><button type="button" onClick={handleSignOut}>Odjava</button></div></div>
+    <main className="app-main">{renderScreen()}</main>
+    <nav className="bottom-nav admin-bottom-nav" aria-label="Skrbniška navigacija">
+     {adminNav.map(([id, label, Icon]) => (
+      <button key={id} className={activePage === id ? "active" : ""} onClick={() => setPage(id)}>
+       <Icon size={22} />
+       <span>{label}</span>
+      </button>
+     ))}
+    </nav>
+   </div>
+  );
+ }
 
  return (
   <div className="app-shell">
-   <main className="app-main">{screens[page]}</main>
+   <main className="app-main">{renderScreen()}</main>
    <nav className="bottom-nav" aria-label="Glavna navigacija">
     {nav.map(({ id, label, icon: Icon }) => (
      <button key={id} className={page === id ? "active" : ""} onClick={() => setPage(id)}>

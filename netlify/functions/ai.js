@@ -9,11 +9,12 @@ export async function handler(event) {
     const body = JSON.parse(event.body || "{}");
     const question = String(body.question || "").trim();
     if (!question) return json(400, { error: "missing_question" });
+    const imageDataUrl = String(body.imageDataUrl || "");
 
-    const generalAnswer = generalAssistantAnswer(question);
+    const generalAnswer = imageDataUrl ? "" : generalAssistantAnswer(question);
     if (generalAnswer) return json(200, { answer: generalAnswer, mode: "local" });
 
-    if (!isAllowedSmartBeeQuestion(question, body)) {
+    if (!imageDataUrl && !isAllowedSmartBeeQuestion(question, body)) {
       return json(200, { answer: offTopicAiMessage(), mode: "blocked" });
     }
 
@@ -45,11 +46,23 @@ export async function handler(event) {
           {
             role: "system",
             content:
-              "Ti si Pametna čebela v aplikaciji PametniPanj. Odgovarjaj v slovenščini, kratko, praktično in za starejše čebelarje. Odgovarjaj samo na teme o čebelarstvu, panjih, medu, vremenu za pregled, opomnikih, zalogi, senzorjih in osnovna vprašanja o datumu ali uri. Če uporabnik vpraša o drugi temi, ga prijazno usmeri nazaj na čebelarstvo. Ne izmišljuj si podatkov. Če ni dovolj podatkov, povej kaj naj čebelar fizično preveri. Ne dajaj nevarnih veterinarskih navodil brez opozorila, naj se uporabnik drži lokalnih pravil in registriranih pripravkov.",
+              "Ti si Pametna čebela v aplikaciji PametniPanj. Odgovarjaj v slovenščini, kratko, praktično in za starejše čebelarje. Pomagaj pri širokem področju čebelarstva: panji, čebele, med, paša, vreme, oprema, varno delo, zaščita obraza in rok, čebelji piki, alergije, higiena, prevoz, skladiščenje, prodaja čebeljih pridelkov, senzorji ter osnovna vprašanja o datumu ali uri. Če je vprašanje povezano z varnostjo ali zdravjem, jasno opozori na nujne znake in po potrebi svetuj strokovno pomoč oziroma klic 112. Če uporabnik vpraša o povsem drugi temi, ga prijazno usmeri nazaj na čebelarstvo. Ne izmišljuj si podatkov. Če ni dovolj podatkov, povej kaj naj čebelar fizično preveri. Ne dajaj nevarnih veterinarskih navodil brez opozorila, naj se uporabnik drži lokalnih pravil in registriranih pripravkov.",
           },
           {
             role: "user",
-            content: JSON.stringify({ question, context: hiveContext }),
+            content: imageDataUrl
+              ? [
+                  {
+                    type: "input_text",
+                    text:
+                      "Preglej fotografijo čebelarskega zapiska. Najprej jasno opiši, kaj je zanesljivo vidno. Nato naštej morebitna opažanja ali tveganja. Ne postavljaj zanesljive diagnoze varoje ali bolezni samo iz nejasne fotografije. Če potrebuješ bližnji posnetek, povej natančno kaj naj uporabnik fotografira. Opozori, če je slika motna, pretemna ali neprimerna za oceno. Končaj s kratkim praktičnim predlogom. Vprašanje uporabnika: " +
+                      question +
+                      "\\nKontekst: " +
+                      JSON.stringify(hiveContext),
+                  },
+                  { type: "input_image", image_url: imageDataUrl },
+                ]
+              : JSON.stringify({ question, context: hiveContext }),
           },
         ],
       }),
@@ -86,6 +99,8 @@ const BEE_ASSISTANT_KEYWORDS = [
   "hran", "sirup", "sladkor", "pogac", "zaloga", "feed", "teht", "teza", "senzor", "naprava", "bater", "signal",
   "akacij", "lipa", "kostanj", "ajda", "pasa", "gozd", "travnik", "vreme", "dez", "veter", "temperatura",
   "opomnik", "koledar", "pregled", "zapis", "qr", "regal", "skladisc", "oprema", "panji", "cebelnjak",
+  "zascit", "varnost", "rokavic", "klobuk", "mreza", "obraz", "roke", "obleka", "obutev", "dimil", "dim",
+  "pik", "alerg", "otek", "anafil", "higien", "prevoz", "prodaja", "embalaz",
   "kaj naj", "stanje", "opozoril", "obvestil", "danes v panj", "jutri v panj"
 ];
 
@@ -115,7 +130,7 @@ function isAllowedSmartBeeQuestion(question, body = {}) {
 }
 
 function offTopicAiMessage() {
-  return "Pametna čebela zna pomagati pri čebelarstvu, panjih, medu, vremenu za pregled, opomnikih, zalogi, senzorjih in tvojem čebelnjaku. Za ostale teme raje vprašaj drugega pomočnika.";
+  return "Pametna čebela zna pomagati pri čebelarstvu, varnem delu, zaščitni opremi, panjih, medu, vremenu, zalogi, senzorjih in tvojem čebelnjaku. Za povsem druge teme raje vprašaj drugega pomočnika.";
 }
 
 function normalizeSl(value) {
