@@ -5496,9 +5496,39 @@ function RegistrationPlanPage({ finish }) {
  return <div className="access-shell"><section className="plan-select-page"><PageHeader eyebrow="Korak 2 od 2" title="Izberi paket" subtitle="Plačila še niso povezana. Vsi paketi trenutno uporabljajo brezplačni dostop." /><div className="registration-plans">{plans.map((plan) => <article className="registration-plan" key={plan.id}><div className="card-title"><h2>{plan.title}</h2><strong>{plan.price}</strong></div>{plan.soon ? <span className="soon-badge">Prihaja kmalu</span> : null}<ul>{plan.features.map((item) => <li key={item}>✓ {item}</li>)}{(plan.unavailable || []).map((item) => <li className="muted" key={item}>✗ {item}</li>)}</ul><button className={plan.soon ? "secondary-button full-button" : "primary-button full-button"} onClick={() => plan.soon ? notify(plan.id) : finish("free")}>{plan.soon ? "Obvesti me ob lansiranju" : "Izberi"}</button></article>)}</div>{message ? <p className="success-text">{message}</p> : null}<button className="text-button full-button" onClick={() => finish("free")}>Preskoči →</button></section></div>;
 }
 
+const SIMULATOR_AUTO_SEND_KEY = "pametnipanj-simulator-auto-send";
+const SIMULATOR_LAST_SEND_KEY = "pametnipanj-simulator-last-send";
+
+function readSimulatorAutoSendIds() {
+ try {
+  const stored = JSON.parse(localStorage.getItem(SIMULATOR_AUTO_SEND_KEY) || "[]");
+  return new Set(Array.isArray(stored) ? stored : []);
+ } catch {
+  return new Set();
+ }
+}
+
+function saveSimulatorAutoSendIds(ids) {
+ localStorage.setItem(SIMULATOR_AUTO_SEND_KEY, JSON.stringify([...ids]));
+}
+
+function readSimulatorLastSend() {
+ try {
+  return JSON.parse(localStorage.getItem(SIMULATOR_LAST_SEND_KEY) || "{}");
+ } catch {
+  return {};
+ }
+}
+
+function rememberSimulatorSend(hiveId) {
+ const lastSend = readSimulatorLastSend();
+ lastSend[hiveId] = Date.now();
+ localStorage.setItem(SIMULATOR_LAST_SEND_KEY, JSON.stringify(lastSend));
+}
+
 function simulatorDefaults(hive) {
  return {
-  enabled: false,
+  enabled: readSimulatorAutoSendIds().has(hive.id),
   location: hive.locationName || hive.location || "",
   latitude: hive.latitude || "",
   longitude: hive.longitude || "",
@@ -5639,7 +5669,18 @@ function AdminSimulatorPage({ session, setPage, selectedUserId, selectedHiveId, 
  const [sendingHiveId, setSendingHiveId] = useState("");
  const [hiveMessages, setHiveMessages] = useState({});
  const [message, setMessage] = useState("Nalagam strežniške podatke ...");
+ const overviewRef = useRef(overview);
+ const configsRef = useRef(configs);
+ const sendingHiveIdRef = useRef("");
  const visibleHives = selectedUserId ? overview.hives.filter((hive) => hive.userId === selectedUserId) : overview.hives;
+
+ useEffect(() => {
+  overviewRef.current = overview;
+ }, [overview]);
+
+ useEffect(() => {
+  configsRef.current = configs;
+ }, [configs]);
 
  async function refresh(resetConfigs = false) {
   try {
@@ -5664,6 +5705,23 @@ function AdminSimulatorPage({ session, setPage, selectedUserId, selectedHiveId, 
   setConfigs((current) => ({ ...current, [hiveId]: { ...current[hiveId], [field]: value } }));
  }
 
+ function toggleAutoSend(hive, enabled) {
+  const nextConfig = { ...(configsRef.current[hive.id] || simulatorDefaults(hive)), enabled };
+  configsRef.current = { ...configsRef.current, [hive.id]: nextConfig };
+  setConfigs(configsRef.current);
+  const enabledIds = readSimulatorAutoSendIds();
+  if (enabled) enabledIds.add(hive.id);
+  else enabledIds.delete(hive.id);
+  saveSimulatorAutoSendIds(enabledIds);
+  setHiveMessages((current) => ({
+   ...current,
+   [hive.id]: enabled
+    ? "Samodejno pošiljanje je vključeno. Prva meritev se pošilja zdaj, nato vsaki 2 minuti."
+    : "Samodejno pošiljanje je izključeno.",
+  }));
+  if (enabled) window.setTimeout(() => sendReading(hive, nextConfig), 0);
+ }
+
  function applyOptimalSuggestion(hiveId) {
   setConfigs((current) => ({
    ...current,
@@ -5684,14 +5742,16 @@ function AdminSimulatorPage({ session, setPage, selectedUserId, selectedHiveId, 
   setHiveMessages((current) => ({ ...current, [hiveId]: "Predlagane mirne vrednosti so vpisane. Za shranjevanje klikni Pošlji meritev zdaj." }));
  }
 
- async function sendReading(hive) {
-  const config = configs[hive.id] || simulatorDefaults(hive);
-  if (sendingHiveId) return;
+ async function sendReading(hive, configOverride = null) {
+  const config = configOverride || configsRef.current[hive.id] || simulatorDefaults(hive);
+  if (sendingHiveIdRef.current) return false;
+  sendingHiveIdRef.current = hive.id;
   setSendingHiveId(hive.id);
   setHiveMessages((current) => ({ ...current, [hive.id]: "Pošiljam in preverjam zapis na strežniku ..." }));
   setMessage(`Pošiljam meritev za ${hive.name} ...`);
   try {
    const result = await saveSimulatorReading(session, hive.userId, hive, config);
+   rememberSimulatorSend(hive.id);
    await refresh(true);
    const warning = result.warnings.length ? ` Opozorilo: ${result.warnings.join(" ")}` : "";
    setHiveMessages((current) => ({ ...current, [hive.id]: `Strežnik je potrdil: ${result.hive.weightKg} kg · ${result.hive.foodKg} kg hrane · ${result.hive.foodDays} dni · ${freshnessLabel(result.hive.updatedAt)}.${warning}` }));
@@ -5700,22 +5760,37 @@ function AdminSimulatorPage({ session, setPage, selectedUserId, selectedHiveId, 
    setHiveMessages((current) => ({ ...current, [hive.id]: `Ni shranjeno: ${error.message}` }));
    setMessage(`Pošiljanje ni uspelo: ${error.message}`);
   } finally {
+   sendingHiveIdRef.current = "";
    setSendingHiveId("");
   }
+  return true;
  }
 
  useEffect(() => {
-  const timer = window.setInterval(() => {
-   overview.hives.forEach((hive) => {
-    if (configs[hive.id]?.enabled) sendReading(hive);
-   });
-  }, 120000);
-  return () => window.clearInterval(timer);
- }, [overview.hives, configs]);
+  const sendDueReadings = async () => {
+   const now = Date.now();
+   const lastSend = readSimulatorLastSend();
+   const enabledHives = overviewRef.current.hives.filter((hive) => (
+    configsRef.current[hive.id]?.enabled && now - Number(lastSend[hive.id] || 0) >= 120000
+   ));
+   for (const hive of enabledHives) {
+    await sendReading(hive, configsRef.current[hive.id]);
+   }
+  };
+  const timer = window.setInterval(sendDueReadings, 10000);
+  const onVisible = () => {
+   if (document.visibilityState === "visible") sendDueReadings();
+  };
+  document.addEventListener("visibilitychange", onVisible);
+  return () => {
+   window.clearInterval(timer);
+   document.removeEventListener("visibilitychange", onVisible);
+  };
+ }, []);
 
  return (
   <section className="simulator-page">
-   <PageHeader eyebrow="Skrbniški dostop" title="Simulator LilyGO" subtitle="Meritve se zapisujejo na isti strežnik, ki ga bere aplikacija na telefonu." action={<button className="icon-button" onClick={() => setPage("dashboard")} aria-label="Nazaj"><ArrowLeft size={22} /></button>} />
+   <PageHeader eyebrow="Skrbniški dostop" title="Simulator LilyGO" subtitle="Meritve se zapisujejo na isti strežnik, ki ga bere aplikacija na telefonu. Samodejno pošiljanje deluje, dokler je simulator odprt." action={<button className="icon-button" onClick={() => setPage("dashboard")} aria-label="Nazaj"><ArrowLeft size={22} /></button>} />
    <div className="metric-grid">
     <Metric icon={Radio} label="Čebelarji" value={overview.users.filter((user) => user.role !== "admin").length} />
     <Metric icon={Hexagon} label="Panji" value={overview.hives.length} />
@@ -5733,7 +5808,7 @@ function AdminSimulatorPage({ session, setPage, selectedUserId, selectedHiveId, 
      const owner = overview.users.find((user) => user.id === hive.userId);
      return (
       <article className="simulator-card" key={hive.id}>
-       <div className="card-title"><div><span>{owner?.username || owner?.email || "čebelar"}</span><h2>{hive.name}</h2></div><label className="switch-label"><input type="checkbox" checked={config.enabled} onChange={(event) => update(hive.id, "enabled", event.target.checked)} /> vsaki 2 min</label></div>
+       <div className="card-title"><div><span>{owner?.username || owner?.email || "čebelar"}</span><h2>{hive.name}</h2></div><label className="switch-label"><input type="checkbox" checked={config.enabled} onChange={(event) => toggleAutoSend(hive, event.target.checked)} /> vsaki 2 min</label></div>
        <div className="simulator-optimal-hint"><div><strong>Predlog mirnega stanja</strong><span>20 kg hrane · 34,5 °C in 55 % vlage v panju · baterija 90 %</span></div><button className="secondary-button compact-button" type="button" onClick={() => applyOptimalSuggestion(hive.id)}>Vpiši predlog</button></div>
        <label>Lokacija<input placeholder={SIMULATOR_SUGGESTIONS.location} value={config.location} onChange={(event) => update(hive.id, "location", event.target.value)} /></label>
        <LocationPinPicker latitude={config.latitude} longitude={config.longitude} onChange={(latitude, longitude) => setConfigs((current) => ({ ...current, [hive.id]: { ...current[hive.id], latitude, longitude } }))} />
