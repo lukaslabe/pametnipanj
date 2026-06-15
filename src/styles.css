@@ -3362,6 +3362,14 @@ select {
   font-weight: 800;
 }
 
+.scale-card-live {
+  box-shadow: 0 0 0 3px rgba(45, 123, 53, 0.22);
+}
+
+.scale-card-live svg {
+  color: #79d584;
+}
+
 .device-status {
   display: flex;
   align-items: center;

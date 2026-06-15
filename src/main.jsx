@@ -4000,120 +4000,218 @@ function ExtractionPage({ data, addExtractionEvent }) {
  );
 }
 
+const POCKET_SCALE_SERVICE_UUID = "12345678-1234-1234-1234-123456789abc";
+const POCKET_SCALE_WEIGHT_UUID = "12345678-1234-1234-1234-123456789ab1";
+const POCKET_SCALE_COMMAND_UUID = "12345678-1234-1234-1234-123456789ab2";
+const POCKET_SCALE_NAME = "PametniPanj-Scale";
+
+function parseBleWeightGrams(value) {
+ const bytes = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+ const text = new TextDecoder().decode(bytes).replace(/\0/g, "").trim();
+ const textMatch = text.replace(",", ".").match(/-?\d+(?:\.\d+)?/);
+ if (textMatch) {
+  const number = Number(textMatch[0]);
+  return Math.round(/\bkg\b/i.test(text) ? number * 1000 : number);
+ }
+ if (value.byteLength === 4) {
+  const floatValue = value.getFloat32(0, true);
+  if (Number.isFinite(floatValue) && Math.abs(floatValue) < 1000000) {
+   return Math.round(Math.abs(floatValue) < 100 ? floatValue * 1000 : floatValue);
+  }
+  return value.getInt32(0, true);
+ }
+ if (value.byteLength === 2) return value.getInt16(0, true);
+ return null;
+}
+
 function PocketScalePage({ data, saveScaleMeasurement, saveParsedEvent }) {
  const [hiveId, setHiveId] = useState(data.hives[0]?.id || "");
- const [type, setType] = useState("pollen_harvest");
- const [tare, setTare] = useState(0.42);
- const [weight, setWeight] = useState(1.24);
- const [bleStatus, setBleStatus] = useState("Bluetooth se ni povezan. Lahko testiras s simulirano tezo.");
+ const [weightGrams, setWeightGrams] = useState(0);
+ const [bleStatus, setBleStatus] = useState("Tehtnica ni povezana.");
  const [bleDeviceName, setBleDeviceName] = useState("");
  const [isBleConnected, setIsBleConnected] = useState(false);
- const net = Math.max(0, Math.round((weight - tare) * 100) / 100);
+ const [isConnecting, setIsConnecting] = useState(false);
+ const [saveStatus, setSaveStatus] = useState("");
+ const deviceRef = useRef(null);
+ const weightCharacteristicRef = useRef(null);
+ const commandCharacteristicRef = useRef(null);
+ const currentYear = new Date().getFullYear();
+ const annualPollenByHive = data.hives.map((hive) => {
+  const grams = (data.pollenEvents || [])
+   .filter((event) => event.hiveId === hive.id && new Date(event.createdAt || Date.now()).getFullYear() === currentYear)
+   .reduce((sum, event) => sum + Math.round(toNumber(event.amountKg) * 1000), 0);
+  return { hive, grams };
+ }).filter((entry) => entry.grams > 0);
 
- async function connectBluetoothScale() {
-  if (!navigator.bluetooth.requestDevice) {
-   setBleStatus("Bluetooth v tem brskalniku ni na voljo. Na telefonu poskusi Chrome ali uporabi simulacijo.");
+ function handleWeightChanged(event) {
+  const grams = parseBleWeightGrams(event.target.value);
+  if (grams === null || !Number.isFinite(grams)) {
+   setBleStatus("Tehtnica je poslala neveljaven podatek.");
    return;
   }
+  setWeightGrams(grams);
+  setBleStatus(`Povezano z ${deviceRef.current?.name || POCKET_SCALE_NAME}. Teža se posodablja v živo.`);
+ }
+
+ useEffect(() => () => {
+  const characteristic = weightCharacteristicRef.current;
+  if (characteristic) characteristic.removeEventListener("characteristicvaluechanged", handleWeightChanged);
+  if (deviceRef.current?.gatt?.connected) deviceRef.current.gatt.disconnect();
+ }, []);
+
+ async function connectBluetoothScale() {
+  if (!window.isSecureContext) {
+   setBleStatus("Bluetooth zahteva varno povezavo HTTPS. Tehtnico preizkusi na pametnipanj.si v Chromu.");
+   return;
+  }
+  if (!navigator.bluetooth?.requestDevice) {
+   setBleStatus("Ta brskalnik ne podpira povezave Bluetooth. Na Androidu uporabi Chrome.");
+   return;
+  }
+  setIsConnecting(true);
+  setSaveStatus("");
   try {
-   setBleStatus("Iscem Bluetooth naprave...");
+   setBleStatus("Iščem tehtnico PametniPanj-Scale...");
    const device = await navigator.bluetooth.requestDevice({
-    acceptAllDevices: true,
-    optionalServices: ["battery_service"],
+    filters: [{ name: POCKET_SCALE_NAME }],
+    optionalServices: [POCKET_SCALE_SERVICE_UUID],
    });
+   deviceRef.current = device;
    setBleDeviceName(device.name || device.id || "Neimenovana naprava");
    device.addEventListener("gattserverdisconnected", () => {
     setIsBleConnected(false);
-    setBleStatus("Naprava se je odklopila. Simulacija ostane na voljo.");
+    weightCharacteristicRef.current = null;
+    commandCharacteristicRef.current = null;
+    setBleStatus("Tehtnica se je odklopila.");
    });
    const server = await device.gatt.connect();
-   setIsBleConnected(true);
-   let batteryText = "";
+   const service = await server.getPrimaryService(POCKET_SCALE_SERVICE_UUID);
+   const weightCharacteristic = await service.getCharacteristic(POCKET_SCALE_WEIGHT_UUID);
+   const commandCharacteristic = await service.getCharacteristic(POCKET_SCALE_COMMAND_UUID);
+   weightCharacteristicRef.current = weightCharacteristic;
+   commandCharacteristicRef.current = commandCharacteristic;
+   weightCharacteristic.addEventListener("characteristicvaluechanged", handleWeightChanged);
+   await weightCharacteristic.startNotifications();
    try {
-    const service = await server.getPrimaryService("battery_service");
-    const characteristic = await service.getCharacteristic("battery_level");
-    const value = await characteristic.readValue();
-    batteryText = ` Baterija ${value.getUint8(0)}%.`;
+    const initialValue = await weightCharacteristic.readValue();
+    const initialGrams = parseBleWeightGrams(initialValue);
+    if (initialGrams !== null) setWeightGrams(initialGrams);
    } catch {
-    batteryText = " Za pravo branje teze moramo kasneje dodati UUID tvoje tehtnice.";
+    // Nekatere tehtnice podpirajo samo obvestila.
    }
-   setBleStatus(`Povezano z ${device.name || "napravo"}.${batteryText}`);
-  } catch {
+   setIsBleConnected(true);
+   setBleStatus(`Povezano z ${device.name || POCKET_SCALE_NAME}. Teža se posodablja v živo.`);
+  } catch (error) {
    setIsBleConnected(false);
-   setBleStatus("Povezava ni uspela ali je bila preklicana. Simulacija ostane na voljo.");
+   setBleStatus(error?.name === "NotFoundError"
+    ? "Izbira tehtnice je bila preklicana."
+    : `Povezava ni uspela: ${error?.message || "preveri, ali je tehtnica vključena."}`);
+  } finally {
+   setIsConnecting(false);
   }
  }
 
- function readScaleWeight() {
-  const nextWeight = Math.round((0.6 + Math.random() * 4) * 100) / 100;
-  setWeight(nextWeight);
-  if (isBleConnected) {
-   setBleStatus("Naprava je povezana. Teža je za zdaj testno simulirana, dokler ne poznamo protokola tehtnice.");
+ async function sendTare() {
+  if (!commandCharacteristicRef.current || !isBleConnected) {
+   setBleStatus("Najprej poveži tehtnico.");
+   return;
+  }
+  try {
+   const command = new TextEncoder().encode("TARA");
+   const characteristic = commandCharacteristicRef.current;
+   if (characteristic.properties.write && characteristic.writeValueWithResponse) await characteristic.writeValueWithResponse(command);
+   else if (characteristic.writeValueWithoutResponse) await characteristic.writeValueWithoutResponse(command);
+   else await characteristic.writeValue(command);
+   setBleStatus("Ukaz Tara je poslan. Čakam novo težo.");
+  } catch (error) {
+   setBleStatus(`Tare ni bilo mogoče poslati: ${error?.message || "neznana napaka"}`);
   }
  }
 
- function save() {
+ function savePollen() {
+  const grams = Math.max(0, Math.round(weightGrams));
+  if (!isBleConnected) {
+   setSaveStatus("Najprej poveži tehtnico in počakaj na meritev.");
+   return;
+  }
+  if (!hiveId) {
+   setSaveStatus("Najprej izberi panj.");
+   return;
+  }
+  if (!grams) {
+   setSaveStatus("Teža mora biti večja od 0 g.");
+   return;
+  }
+  const kilograms = grams / 1000;
   const action = {
-   type,
+   type: "pollen_harvest",
    hiveId,
-   amount: net,
+   amount: kilograms,
    unit: "kg",
    date: todayLabel(),
-   transcript: `PocketScale ${actionTypeLabel(type)} ${net} kg`,
-   note: `${actionTypeLabel(type)}: ${net} kg.`,
-   fields: { device: "PametniPanj PocketScale", grossKg: weight, tareKg: tare },
+   transcript: `PocketScale cvetni prah ${grams} g`,
+   note: `Zabeležen cvetni prah: ${grams} g.`,
+   fields: { device: POCKET_SCALE_NAME, weightGrams: grams },
   };
-  saveScaleMeasurement({ hiveId, type, grossKg: weight, tareKg: tare, netKg: net });
+  saveScaleMeasurement({ hiveId, type: "pollen_harvest", grossKg: kilograms, tareKg: 0, netKg: kilograms, weightGrams: grams });
   saveParsedEvent(action, "bluetooth_scale");
+  setSaveStatus(`${grams} g cvetnega prahu je shranjeno pod panj ${getHiveName(data.hives, hiveId)}.`);
  }
 
  return (
   <section>
-   <PageHeader eyebrow="PametniPanj PocketScale" title={`${net.toFixed(2)} kg`} subtitle={isBleConnected ? `Povezano: ${bleDeviceName}` : "Bluetooth iskanje je pripravljeno, teža je še testna."} />
-   <div className="scale-card">
+   <PageHeader eyebrow="PametniPanj PocketScale" title={`${weightGrams} g`} subtitle={isBleConnected ? `Povezano: ${bleDeviceName}` : "Poveži tehtnico in izberi panj."} />
+   <div className={`scale-card ${isBleConnected ? "scale-card-live" : ""}`}>
     <Scale size={44} />
-    <strong>{weight.toFixed(2)} kg</strong>
-    <span>Tara {tare.toFixed(2)} kg · neto {net.toFixed(2)} kg</span>
+    <strong>{weightGrams} g</strong>
+    <span>{isBleConnected ? "Meritev v živo" : "Tehtnica ni povezana"}</span>
    </div>
    <div className={`device-status ${isBleConnected ? "ok" : ""}`}>
     <Radio size={20} />
     <span>{bleStatus}</span>
    </div>
    <div className="quick-grid">
-    <button onClick={connectBluetoothScale}>Bluetooth</button>
-    <button onClick={() => setTare(weight)}>Tara</button>
-    <button onClick={readScaleWeight}>Stehtaj</button>
-    <button onClick={save}>Shrani</button>
+    <button onClick={connectBluetoothScale} disabled={isConnecting}>{isConnecting ? "Povezujem..." : "Poveži tehtnico"}</button>
+    <button onClick={sendTare} disabled={!isBleConnected}>Tara</button>
    </div>
    <form className="form-card">
     <HiveSelect hives={data.hives} value={hiveId} onChange={setHiveId} />
-    <label>Vrsta dogodka
-     <select value={type} onChange={(event) => setType(event.target.value)}>
-      <option value="pollen_harvest">Cvetni prah</option>
-      <option value="honey_extraction">Okvirji z medom</option>
-      <option value="inventory_update">Zaloga</option>
-      <option value="equipment_note">Oprema</option>
-     </select>
-    </label>
+    <button className="primary-button" type="button" onClick={savePollen}>Zabeleži cvetni prah</button>
+    {saveStatus ? <p className="success-text">{saveStatus}</p> : null}
    </form>
+   <div className="card">
+    <h2>Letni donos cvetnega prahu {currentYear}</h2>
+    <div className="stack">
+     {annualPollenByHive.length ? annualPollenByHive.map(({ hive, grams }) => (
+      <article className="event-card" key={hive.id}>
+       <Scale size={22} />
+       <div><strong>{hive.name}</strong><span>{grams} g cvetnega prahu</span></div>
+      </article>
+     )) : <p className="subtle">Letos še ni zabeleženega cvetnega prahu.</p>}
+    </div>
+   </div>
+   <details className="details-card">
+    <summary>Podrobnosti povezave</summary>
+    <p className="subtle">Naprava: {POCKET_SCALE_NAME}<br />Service UUID: {POCKET_SCALE_SERVICE_UUID}<br />Teža: {POCKET_SCALE_WEIGHT_UUID}<br />Ukazi: {POCKET_SCALE_COMMAND_UUID}</p>
+   </details>
   </section>
  );
 }
 
 function PollenPage({ data, addPollenEvent }) {
- const [form, setForm] = useState({ hiveId: data.hives[0]?.id || "", amountKg: 1, notes: "" });
- const total = data.pollenEvents.reduce((sum, event) => sum + toNumber(event.amountKg), 0);
+ const [form, setForm] = useState({ hiveId: data.hives[0]?.id || "", amountGrams: 100, notes: "" });
+ const totalGrams = data.pollenEvents.reduce((sum, event) => sum + Math.round(toNumber(event.amountKg) * 1000), 0);
 
  return (
   <section>
-   <PageHeader eyebrow="Cvetni prah" title={`${total.toFixed(2)} kg skupaj`} subtitle="Ročni, glasovni ali PocketScale vnos." />
-   <form className="form-card compact-form" onSubmit={(event) => { event.preventDefault(); addPollenEvent(form); setForm((current) => ({ ...current, amountKg: 1, notes: "" })); }}>
+   <PageHeader eyebrow="Cvetni prah" title={`${totalGrams} g skupaj`} subtitle="Ročni, glasovni ali PocketScale vnos." />
+   <form className="form-card compact-form" onSubmit={(event) => { event.preventDefault(); addPollenEvent({ ...form, amountKg: toNumber(form.amountGrams) / 1000 }); setForm((current) => ({ ...current, amountGrams: 100, notes: "" })); }}>
     <HiveSelect hives={data.hives} value={form.hiveId} onChange={(value) => setForm((current) => ({ ...current, hiveId: value }))} />
-    <label>Količina kg<input type="number" step="0.01" value={form.amountKg} onChange={(event) => setForm((current) => ({ ...current, amountKg: event.target.value }))} /></label>
+    <label>Količina g<input type="number" step="1" min="1" value={form.amountGrams} onChange={(event) => setForm((current) => ({ ...current, amountGrams: event.target.value }))} /></label>
     <label>Opomba<input value={form.notes} onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))} /></label>
     <button className="primary-button" type="submit">Shrani cvetni prah</button>
    </form>
-   <div className="stack">{data.pollenEvents.map((event) => <EventCard key={event.id} icon={Droplets} title={`${getHiveName(data.hives, event.hiveId)}: ${event.amountKg} kg`} subtitle={`${formatSlovenianDate(event.date)} · ${event.notes}`} />)}</div>
+   <div className="stack">{data.pollenEvents.map((event) => <EventCard key={event.id} icon={Droplets} title={`${getHiveName(data.hives, event.hiveId)}: ${Math.round(toNumber(event.amountKg) * 1000)} g`} subtitle={`${formatSlovenianDate(event.date)} · ${event.notes}`} />)}</div>
   </section>
  );
 }
@@ -4748,7 +4846,7 @@ function AiAssistantPage({ data, openHive, setPage }) {
 function DevicesPage({ data }) {
  return (
   <section>
-   <PageHeader eyebrow="Naprave" title="Povezave" subtitle="Real Bluetooth se pride, zdaj je UI simuliran." />
+  <PageHeader eyebrow="Naprave" title="Povezave" subtitle="PocketScale uporablja pravo Bluetooth povezavo. Senzorji panja bodo povezani pozneje." />
    <div className="stack">{data.devices.map((device) => <EventCard key={device.id} icon={Radio} title={device.name} subtitle={`${device.type} · ${device.status} · baterija ${device.batteryPct}%`} />)}</div>
   </section>
  );
