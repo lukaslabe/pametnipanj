@@ -49,6 +49,8 @@ import {
 } from "lucide-react";
 import "./styles.css";
 import { calculateHiveFood, deriveHiveStatus } from "./utils/hiveStatus";
+import pametniPanjHero from "./assets/pametnipanj-hero.png";
+import pametniPanjInspection from "./assets/pametnipanj-pregled-panja.png";
 import {
  fetchCloudData,
  fetchProfile,
@@ -83,6 +85,8 @@ const HIVE_DRAFT_KEY = "pp-hive-draft";
 const HIVE_DRAFT_STEP_KEY = "pp-hive-draft-step";
 const SEEN_SYSTEM_CONTENT_KEY = "pp-seen-system-content";
 const FIRST_HIVE_PROMPT_KEY = "pp-first-hive-prompt";
+const ANALYTICS_CONSENT_KEY = "pametnipanj-analytics-consent";
+const GA_MEASUREMENT_ID = import.meta.env.VITE_GA_MEASUREMENT_ID || "";
 
 const initialData = {
  hives: [
@@ -1008,30 +1012,40 @@ function sensorStatusForHive(hive) {
 }
 
 function getWeatherForHive(data, hive) {
- return (data.weather || []).find((item) => item.hiveId === hive.id)
-  || makeFallbackWeather(hive);
+ const latitude = Number(hive.latitude);
+ const longitude = Number(hive.longitude);
+ if (!validCoordinates(latitude, longitude)) return null;
+ return (data.weather || []).find((item) => (
+  item.hiveId === hive.id
+  && item.source === "Open-Meteo"
+  && Math.abs(Number(item.latitude) - latitude) < 0.0001
+  && Math.abs(Number(item.longitude) - longitude) < 0.0001
+ )) || null;
 }
 
-function makeFallbackWeather(hive) {
- const base = Math.abs([...hive.id].reduce((sum, char) => sum + char.charCodeAt(0), 0));
- const tempC = 18 + (base % 8);
- const rainMmNext24h = (base % 5) * 0.8;
- const windKmh = 6 + (base % 18);
- const risk = rainMmNext24h > 4 || windKmh > 22 ? "warn" : "ok";
- return {
-  id: `W-${hive.id}`,
-  hiveId: hive.id,
-  locationName: hive.locationName || hive.location || "Lokacija panja",
-  observedAt: new Date().toISOString(),
-  condition: risk === "warn" ? "spremenljivo" : "mirno",
-  tempC,
-  humidityPct: 60 + (base % 22),
-  windKmh,
-  rainMmNext24h,
-  pressureHpa: 1010 + (base % 12),
-  advice: risk === "warn" ? "Pregled naj bo kratek." : "Vreme je primerno za pregled.",
-  risk,
- };
+function mergeWeatherForHives(currentWeather, hives, freshWeather) {
+ const currentByHiveId = new Map((currentWeather || []).map((weather) => [weather.hiveId, weather]));
+ const freshByHiveId = new Map((freshWeather || []).filter(Boolean).map((weather) => [weather.hiveId, weather]));
+ return hives.map((hive) => {
+  const fresh = freshByHiveId.get(hive.id);
+  if (fresh) return fresh;
+  const current = currentByHiveId.get(hive.id);
+  if (!current) return null;
+  const latitude = Number(hive.latitude);
+  const longitude = Number(hive.longitude);
+  if (!validCoordinates(latitude, longitude)) return null;
+  return current.source === "Open-Meteo"
+   && Math.abs(Number(current.latitude) - latitude) < 0.0001
+   && Math.abs(Number(current.longitude) - longitude) < 0.0001
+   ? current
+   : null;
+ }).filter(Boolean);
+}
+
+function validCoordinates(latitude, longitude) {
+ return Number.isFinite(latitude) && Number.isFinite(longitude)
+  && latitude >= -90 && latitude <= 90
+  && longitude >= -180 && longitude <= 180;
 }
 
 function weatherStatusForHive(hive, weather) {
@@ -1080,11 +1094,14 @@ function openMeteoCodeToCondition(code) {
 }
 
 async function fetchOpenMeteoWeatherForHive(hive) {
- if (!Number.isFinite(Number(hive.latitude)) || !Number.isFinite(Number(hive.longitude))) return null;
- const url = `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(hive.latitude)}&longitude=${encodeURIComponent(hive.longitude)}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,surface_pressure,weather_code&daily=weather_code,temperature_2m_max,precipitation_sum,wind_speed_10m_max&timezone=Europe%2FLjubljana&forecast_days=7`;
- const response = await fetch(url);
+ const latitude = Number(hive.latitude);
+ const longitude = Number(hive.longitude);
+ if (!validCoordinates(latitude, longitude)) return null;
+ const url = `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,surface_pressure,weather_code&daily=weather_code,temperature_2m_max,precipitation_sum,wind_speed_10m_max&timezone=auto&forecast_days=7`;
+ const response = await fetch(url, { cache: "no-store" });
  if (!response.ok) throw new Error("Vreme ni dosegljivo.");
  const payload = await response.json();
+ if (!payload.current || !Number.isFinite(Number(payload.current.temperature_2m))) throw new Error("Vremenski vir ni vrnil veljavnih podatkov.");
  const forecast = (payload.daily.time || []).map((date, index) => ({
   day: index === 0 ? "Danes" : new Intl.DateTimeFormat("sl-SI", { weekday: "short" }).format(new Date(date)),
   tempC: Math.round(payload.daily.temperature_2m_max?.[index] ?? payload.current.temperature_2m ?? 0),
@@ -1095,6 +1112,8 @@ async function fetchOpenMeteoWeatherForHive(hive) {
  return {
   id: `W-LIVE-${hive.id}`,
   hiveId: hive.id,
+  latitude,
+  longitude,
   locationName: hive.locationName || hive.location || hive.name,
   observedAt: new Date().toISOString(),
   condition: openMeteoCodeToCondition(payload.current.weather_code),
@@ -1107,6 +1126,7 @@ async function fetchOpenMeteoWeatherForHive(hive) {
   risk: "ok",
   forecast,
   source: "Open-Meteo",
+  timezone: payload.timezone || "",
  };
 }
 
@@ -1996,7 +2016,9 @@ function LocationBlock({ hive }) {
   phone: "Lokacija iz telefona",
   device: "Lokacija iz naprave",
  };
- const hasCoordinates = Number.isFinite(Number(hive.latitude)) && Number.isFinite(Number(hive.longitude));
+ const latitude = Number(hive.latitude);
+ const longitude = Number(hive.longitude);
+ const hasCoordinates = validCoordinates(latitude, longitude);
  const mapsUrl = hasCoordinates
   ? `https://www.google.com/maps?q=${encodeURIComponent(`${hive.latitude},${hive.longitude}`)}`
   : `https://www.google.com/maps/search/api=1&query=${encodeURIComponent(hive.locationName || hive.location || hive.name)}`;
@@ -2004,7 +2026,12 @@ function LocationBlock({ hive }) {
   <div className="location-card">
    <strong>{displayText(hive.locationName || hive.location || "Lokacija")}</strong>
    <span>{sourceLabels[hive.locationSource] || "Lokacija nastavljena ročno"} · {freshnessLabel(hive.locationUpdatedAt)}</span>
-   <div className="map-placeholder">Predogled zemljevida</div>
+   {hasCoordinates ? (
+    <>
+     <iframe className="location-preview-map" title={`Lokacija panja ${hive.name}`} loading="lazy" src={`https://www.openstreetmap.org/export/embed.html?bbox=${longitude - 0.015}%2C${latitude - 0.01}%2C${longitude + 0.015}%2C${latitude + 0.01}&layer=mapnik&marker=${latitude}%2C${longitude}`} />
+     <span className="location-coordinates"><MapPin size={16} /> {latitude.toFixed(5)}, {longitude.toFixed(5)}</span>
+    </>
+   ) : <div className="map-placeholder">Koordinate še niso nastavljene. Vreme za ta panj ni na voljo.</div>}
    <a className="secondary-link" href={mapsUrl} target="_blank" rel="noreferrer">{hasCoordinates ? "Odpri v Google Maps" : "Išči v Google Maps"}</a>
   </div>
  );
@@ -2045,6 +2072,7 @@ function WeatherHiveCard({ hive, weather, status, compact = true }) {
      <span className="eyebrow">{displayText(hive.locationName || hive.location)}</span>
      <h2>{compact ? displayText(hive.name) : status.text}</h2>
      <p>{compact ? status.text : status.advice}</p>
+     <small className="weather-location-detail">{validCoordinates(Number(hive.latitude), Number(hive.longitude)) ? `${Number(hive.latitude).toFixed(4)}, ${Number(hive.longitude).toFixed(4)}` : "Koordinate niso nastavljene"}</small>
     </div>
     <CloudSun size={38} />
    </div>
@@ -2053,8 +2081,8 @@ function WeatherHiveCard({ hive, weather, status, compact = true }) {
     <span><CloudRain size={17} /> {safeWeather.rainMmNext24h} mm</span>
     <span><Wind size={17} /> {safeWeather.windKmh} km/h</span>
    </div>
-   <ForecastStrip forecast={forecast} />
-   <p className="subtle">{displayText(beekeepingForecastSummary(forecast))}</p>
+   {forecast.length ? <ForecastStrip forecast={forecast} /> : null}
+   <p className="subtle">{forecast.length ? displayText(beekeepingForecastSummary(forecast)) : "Nastavi veljavne koordinate panja, da pridobiš resnično vreme za njegovo lokacijo."}</p>
    {!compact ? (
     <details className="inline-details">
      <summary>Podrobnosti</summary>
@@ -2062,6 +2090,9 @@ function WeatherHiveCard({ hive, weather, status, compact = true }) {
       <Metric icon={Droplets} label="Vlaga zunaj" value={`${safeWeather.humidityPct}%`} />
       <Metric icon={Gauge} label="Tlak" value={`${safeWeather.pressureHpa} hPa`} />
       <Metric icon={CloudSun} label="Stanje" value={safeWeather.condition} />
+      <Metric icon={MapPin} label="Vir lokacije" value={weather?.source === "Open-Meteo" ? "Koordinate panja" : "Ni podatka"} />
+      <Metric icon={CloudSun} label="Vremenski vir" value={weather?.source || "Ni podatka"} />
+      <Metric icon={CalendarDays} label="Časovni pas" value={weather?.timezone || "Ni podatka"} />
       <Metric icon={ClockIcon} label="Osveženo" value={safeWeather.observedAt ? freshnessLabel(safeWeather.observedAt).replace("zadnji podatek ", "") : "ni podatka"} />
      </div>
     </details>
@@ -2078,6 +2109,7 @@ function WeatherPage({ data, openHive }) {
  const activeHives = data.hives.filter((hive) => hive.status !== "archived");
  const [liveWeather, setLiveWeather] = useState({});
  const [weatherSource, setWeatherSource] = useState("Nalagam Open-Meteo...");
+ const hiveLocationSignature = activeHives.map((hive) => `${hive.id}:${hive.latitude}:${hive.longitude}`).join("|");
  useEffect(() => {
   let cancelled = false;
   Promise.all(activeHives.map(async (hive) => {
@@ -2090,15 +2122,21 @@ function WeatherPage({ data, openHive }) {
   })).then((entries) => {
    if (cancelled) return;
    const next = Object.fromEntries(entries.filter(Boolean));
-   setLiveWeather(next);
-   setWeatherSource(Object.keys(next).length ? "Open-Meteo v živo" : "Simulirano vreme");
+   setLiveWeather((current) => ({ ...current, ...next }));
+   const locatedCount = activeHives.filter((hive) => validCoordinates(Number(hive.latitude), Number(hive.longitude))).length;
+   setWeatherSource(Object.keys(next).length
+    ? `Open-Meteo v živo za ${Object.keys(next).length} od ${locatedCount} lokacij`
+    : locatedCount
+     ? "Trenutno ni mogoče osvežiti vremena; prikazujemo zadnje veljavne podatke"
+     : "Koordinate niso nastavljene");
   });
   return () => {
    cancelled = true;
   };
- }, [data.hives]);
- const bestCount = activeHives.filter((hive) => weatherStatusForHive(hive, getWeatherForHive(data, hive)).risk === "ok").length;
- const warnCount = activeHives.length - bestCount;
+ }, [hiveLocationSignature]);
+ const resolvedWeather = activeHives.map((hive) => liveWeather[hive.id] || getWeatherForHive(data, hive)).filter(Boolean);
+ const bestCount = resolvedWeather.filter((weather) => weatherStatusForHive(activeHives.find((hive) => hive.id === weather.hiveId), weather).risk === "ok").length;
+ const warnCount = resolvedWeather.length - bestCount;
 
  return (
   <section>
@@ -2120,7 +2158,7 @@ function WeatherPage({ data, openHive }) {
    </div>
    <details className="details-card">
     <summary>Podrobnosti</summary>
-    <p className="subtle">Vreme je vezano na lokacijo panja. Ko dodamo pravi vir, uporabimo koordinate panja in osvežujemo podatke v ozadju.</p>
+    <p className="subtle">Vreme pridobivamo neposredno iz Open-Meteo glede na zemljepisno širino in dolžino vsakega panja. Brez veljavnih koordinat ne prikazujemo približnega ali izmišljenega vremena.</p>
    </details>
   </section>
  );
@@ -3033,9 +3071,7 @@ function HiveFormPage({ mode, hives, initialHive, initialDraft, saveHive, cancel
     update("locationSource", "phone");
     update("locationUpdatedAt", new Date().toISOString());
     try {
-     const response = await fetch(`https://nominatim.openstreetmap.org/reverseformat=json&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&zoom=18&addressdetails=1`, {
-      headers: { "User-Agent": "PametniPanj/1.0" },
-     });
+     const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&zoom=18&addressdetails=1`);
      const payload = await response.json();
      const address = payload.display_name || "Zaznano iz telefona";
      if (!form.locationName) update("locationName", address);
@@ -3209,6 +3245,12 @@ function HiveFormPage({ mode, hives, initialHive, initialDraft, saveHive, cancel
       <label>Latitude<input value={form.latitude || ""} onChange={(event) => update("latitude", event.target.value)} /></label>
       <label>Longitude<input value={form.longitude || ""} onChange={(event) => update("longitude", event.target.value)} /></label>
      </div>
+     <LocationPinPicker latitude={form.latitude} longitude={form.longitude} onChange={(latitude, longitude) => {
+      update("latitude", latitude);
+      update("longitude", longitude);
+      update("locationSource", "manual");
+      update("locationUpdatedAt", new Date().toISOString());
+     }} />
     </div>
     ) : null}
     {showStep(7) ? (
@@ -5448,12 +5490,13 @@ function NoteCard({ note, hives }) {
  );
 }
 
-function AccessPage({ auth, setAuth, message, onSignIn, onSignUp }) {
- const [registrationMode, setRegistrationMode] = useState(false);
+function AccessPage({ auth, setAuth, message, onSignIn, onSignUp, initialRegistration = false, onBack }) {
+ const [registrationMode, setRegistrationMode] = useState(initialRegistration);
  return (
   <div className="access-shell">
    <section className="access-card">
-    <div className="access-brand"><Hexagon size={34} /><div><strong>PametniPanj</strong><span>Testni strežniški dostop</span></div></div>
+    {onBack ? <button className="text-button access-back-button" type="button" onClick={onBack}><ArrowLeft size={18} /> Nazaj na predstavitev</button> : null}
+    <div className="access-brand"><Hexagon size={34} /><div><strong>PametniPanj</strong><span>Varna prijava čebelarja</span></div></div>
     <h1>{registrationMode ? "Ustvari račun" : "Prijava čebelarja"}</h1>
     <p>{registrationMode ? "Izberi svoje ime, uporabniško ime in novo geslo." : "Prijavi se z uporabniškim imenom in geslom svojega obstoječega računa."}</p>
     <form className="auth-form" onSubmit={registrationMode ? (event) => { event.preventDefault(); onSignUp(); } : onSignIn}>
@@ -5466,6 +5509,74 @@ function AccessPage({ auth, setAuth, message, onSignIn, onSignUp }) {
     </form>
    </section>
   </div>
+ );
+}
+
+function PublicLandingPage({ openSignIn, openRegistration }) {
+ const benefits = [
+  [ShieldAlert, "Vedno veš, kateri panj potrebuje obisk", "Jasna zelena, oranžna ali rdeča ocena združi meritve in zapise v uporabno odločitev."],
+  [CalendarDays, "Koledar, ki razume čebelarjenje", "Opomniki za preglede, hranjenje, varojo, točenje in pomembne čebelarske roke."],
+  [QrCode, "Vsak panj ima svojo zgodbo", "Skeniraj QR kodo in takoj odpri zapiske, meritve, hranjenja ter celotno časovnico panja."],
+  [BeeAIIcon, "Pametna čebela pomaga pri zapisih", "Glasovne in ročne zapiske pretvori v urejene dogodke ter opozori na pomembna opažanja."],
+ ];
+ return (
+  <div className="public-site">
+   <header className="public-nav">
+    <a className="public-brand" href="#vrh"><Hexagon size={30} /><strong>PametniPanj</strong></a>
+    <button className="secondary-button compact-button" type="button" onClick={openSignIn}>Prijava</button>
+   </header>
+   <main>
+    <section className="public-hero" id="vrh" style={{ backgroundImage: `url(${pametniPanjHero})` }}>
+     <div className="public-hero-copy">
+      <span className="public-kicker">Slovenski pomočnik za čebelarje</span>
+      <h1>PametniPanj</h1>
+      <p>Manj ugibanja, bolj mirni panji. Meritve, opozorila, zapiski in čebelarski koledar so zbrani na enem mestu.</p>
+      <div className="public-actions">
+       <button className="primary-button" type="button" onClick={openRegistration}>Ustvari račun</button>
+       <button className="secondary-button" type="button" onClick={openSignIn}>Prijava</button>
+      </div>
+     </div>
+     <div className="public-status-preview" aria-label="Primer pregleda panjev">
+      <div className="public-preview-heading"><div><span>Današnje stanje</span><strong>3 panji so mirni</strong></div><Bell size={24} /></div>
+      <div className="public-hive-row"><i className="public-status-dot status-ok" /><div><strong>Lipovec</strong><span>Zahodni vrt · 18 dni hrane</span></div><b>Mirno</b></div>
+      <div className="public-hive-row"><i className="public-status-dot status-warn" /><div><strong>Gozd</strong><span>Rob gozda · preveri zalogo</span></div><b>Preveri</b></div>
+      <div className="public-hive-row"><i className="public-status-dot status-danger" /><div><strong>Sadovnjak</strong><span>Pri jabolkah · malo hrane</span></div><b>Ukrepaj</b></div>
+     </div>
+    </section>
+
+    <section className="public-section" aria-labelledby="zakaj-pametnipanj">
+     <div className="public-section-heading"><span>Od podatka do odločitve</span><h2 id="zakaj-pametnipanj">Čebelar vidi najprej tisto, kar je pomembno.</h2></div>
+     <div className="public-benefits">
+      {benefits.map(([Icon, title, text]) => <article key={title}><Icon size={28} /><h3>{title}</h3><p>{text}</p></article>)}
+     </div>
+    </section>
+
+    <section className="public-story">
+     <img src={pametniPanjInspection} alt="Čebelar med pregledom satja uporablja telefon in QR oznako panja" />
+     <div>
+      <span>Vsak obisk ostane zapisan</span>
+      <h2>Od pregleda satja do urejene zgodovine panja.</h2>
+      <p>Fotografije, glasovni zapiski, QR oznake in meritve se združijo v jasno časovnico. Tako se pomembno opažanje ne izgubi med beležkami.</p>
+     </div>
+    </section>
+
+    <section className="public-band">
+     <div><span>Začni z obstoječimi panji</span><h2>Uporabljaj dnevnik in koledar danes. Senzorje poveži, ko bodo pripravljeni.</h2></div>
+     <button className="primary-button" type="button" onClick={openRegistration}>Ustvari brezplačen račun</button>
+    </section>
+   </main>
+   <footer className="public-footer"><strong>PametniPanj</strong><span>Razvito v Sloveniji za bolj mirno čebelarjenje.</span></footer>
+  </div>
+ );
+}
+
+function AnalyticsConsent({ consent, setConsent }) {
+ if (!GA_MEASUREMENT_ID || consent) return null;
+ return (
+  <aside className="analytics-consent" aria-label="Nastavitve analitike">
+   <div><strong>Analitika obiska</strong><p>Z anonimno statistiko želimo izboljševati PametniPanj. Analitiko vključimo samo z dovoljenjem.</p></div>
+   <div><button className="primary-button compact-button" type="button" onClick={() => setConsent("accepted")}>Dovoli</button><button className="secondary-button compact-button" type="button" onClick={() => setConsent("declined")}>Ne dovoli</button></div>
+  </aside>
  );
 }
 
@@ -5999,6 +6110,8 @@ function App() {
  const [authMessage, setAuthMessage] = useState("");
  const [registrationPlanOpen, setRegistrationPlanOpen] = useState(false);
  const [cloudStatus, setCloudStatus] = useState("Pripravljen za sinhronizacijo.");
+ const [publicAuthMode, setPublicAuthMode] = useState("");
+ const [analyticsConsent, setAnalyticsConsent] = useState(() => localStorage.getItem(ANALYTICS_CONSENT_KEY) || "");
  const [installPrompt, setInstallPrompt] = useState(null);
  const [installed, setInstalled] = useState(() => window.matchMedia?.("(display-mode: standalone)")?.matches || window.navigator.standalone === true);
  const cloudRequestIdRef = useRef(0);
@@ -6019,6 +6132,19 @@ function App() {
   || normalizeSl(session.user?.email?.split("@")[0]) === "beeadmin"
   || normalizeSl(session.user?.user_metadata?.username) === "beeadmin"
  ));
+
+ useEffect(() => {
+  if (analyticsConsent) localStorage.setItem(ANALYTICS_CONSENT_KEY, analyticsConsent);
+  if (analyticsConsent !== "accepted" || !GA_MEASUREMENT_ID || window.gtag) return;
+  const script = document.createElement("script");
+  script.async = true;
+  script.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(GA_MEASUREMENT_ID)}`;
+  document.head.appendChild(script);
+  window.dataLayer = window.dataLayer || [];
+  window.gtag = function gtag() { window.dataLayer.push(arguments); };
+  window.gtag("js", new Date());
+  window.gtag("config", GA_MEASUREMENT_ID, { anonymize_ip: true });
+ }, [analyticsConsent]);
 
  useEffect(() => {
   const captureInstallPrompt = (event) => {
@@ -6061,6 +6187,7 @@ function App() {
     const pendingIds = new Set(pendingHives.map((hive) => hive.id));
     return normalizeData({
      ...cloudData,
+     weather: current.weather || [],
      hives: [...pendingHives, ...cloudData.hives],
      hivePhotos: [
       ...(current.hivePhotos || []).filter((photo) => pendingIds.has(photo.hiveId)),
@@ -6214,7 +6341,10 @@ function App() {
     return null;
    }
   })).then((weather) => {
-   if (!cancelled) setData((current) => ({ ...current, weather: weather.filter(Boolean) }));
+   if (!cancelled) setData((current) => ({
+    ...current,
+    weather: mergeWeatherForHives(current.weather, current.hives, weather),
+   }));
   });
   refreshWeather();
   const timer = window.setInterval(refreshWeather, 15 * 60 * 1000);
@@ -6305,6 +6435,7 @@ function App() {
   setAuthMessage("");
   setRegistrationPlanOpen(false);
   setCloudStatus("Odjavljen.");
+  setPublicAuthMode("signin");
   setPage("dashboard");
  }
 
@@ -7064,7 +7195,12 @@ function addFeedingEvent(input) {
  }
 
  if (supabaseConfigured && !session) {
-  return <AccessPage auth={auth} setAuth={setAuth} message={authMessage} onSignIn={handleSignIn} onSignUp={handleSignUp} />;
+  return (
+   <>
+    {publicAuthMode ? <AccessPage key={publicAuthMode} auth={auth} setAuth={setAuth} message={authMessage} onSignIn={handleSignIn} onSignUp={handleSignUp} initialRegistration={publicAuthMode === "register"} onBack={() => setPublicAuthMode("")} /> : <PublicLandingPage openSignIn={() => setPublicAuthMode("signin")} openRegistration={() => setPublicAuthMode("register")} />}
+    <AnalyticsConsent consent={analyticsConsent} setConsent={setAnalyticsConsent} />
+   </>
+  );
  }
 
  if (registrationPlanOpen && session && !isAdmin) {
