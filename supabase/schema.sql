@@ -76,6 +76,10 @@ create table if not exists public.readings (
   inside_humidity_pct integer,
   outside_temp_c numeric,
   outside_humidity_pct integer,
+  feed_weight_kg numeric,
+  pressure_hpa numeric,
+  microphone_status text,
+  camera_status text,
   sound_hz integer,
   battery_pct integer,
   battery_v numeric,
@@ -88,6 +92,10 @@ alter table public.readings add column if not exists inside_temp_c numeric;
 alter table public.readings add column if not exists inside_humidity_pct integer;
 alter table public.readings add column if not exists outside_temp_c numeric;
 alter table public.readings add column if not exists outside_humidity_pct integer;
+alter table public.readings add column if not exists feed_weight_kg numeric;
+alter table public.readings add column if not exists pressure_hpa numeric;
+alter table public.readings add column if not exists microphone_status text;
+alter table public.readings add column if not exists camera_status text;
 alter table public.readings add column if not exists battery_v numeric;
 alter table public.readings add column if not exists solar_v numeric;
 alter table public.readings add column if not exists rssi_dbm integer;

@@ -1011,6 +1011,61 @@ function sensorStatusForHive(hive) {
  return { status: "ok", label: minutes < 60 ? `● Živo · pred ${Math.max(1, Math.floor(minutes))} min` : `● Živo · pred ${hours} h`, detail: "Senzor pošilja podatke.", days: 0 };
 }
 
+function latestReadingForHive(data, hiveId) {
+ return [...(data.readings || [])]
+  .filter((reading) => reading.hiveId === hiveId)
+  .sort((a, b) => new Date(b.createdAt || b.recordedAt || 0) - new Date(a.createdAt || a.recordedAt || 0))[0] || null;
+}
+
+function previousReadingForHive(data, hiveId) {
+ return [...(data.readings || [])]
+  .filter((reading) => reading.hiveId === hiveId)
+  .sort((a, b) => new Date(b.createdAt || b.recordedAt || 0) - new Date(a.createdAt || a.recordedAt || 0))[1] || null;
+}
+
+function sensorDisplayValue(value, suffix = "") {
+ if (value === null || value === undefined || value === "" || Number.isNaN(Number(value))) return "Ni podatka";
+ return `${value}${suffix}`;
+}
+
+function hasSensorNumber(value) {
+ return value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value));
+}
+
+function lilyGoSensorRows(data, hive) {
+ const reading = latestReadingForHive(data, hive.id) || {};
+ const hasReading = Boolean(reading.hiveId);
+ return [
+  { icon: Scale, label: "Glavna tehtnica", value: sensorDisplayValue(reading.weightKg ?? hive.weightKg, " kg"), detail: "4 load celli pod celotnim panjem", ok: hasReading || hasSensorNumber(hive.weightKg) },
+  { icon: Utensils, label: "Tehtnica pitalnika", value: sensorDisplayValue(reading.feedWeightKg ?? hive.foodKg, " kg"), detail: "4 load celli pod sediščem pitalnika", ok: hasSensorNumber(reading.feedWeightKg) || hasSensorNumber(hive.foodKg) },
+  { icon: Thermometer, label: "DS18B20 notri", value: sensorDisplayValue(reading.insideTempC ?? reading.tempC ?? hive.temperatureC, " °C"), detail: "Temperatura v panju", ok: hasSensorNumber(reading.insideTempC) || hasSensorNumber(hive.temperatureC) },
+  { icon: CloudSun, label: "BME280 zunaj", value: `${sensorDisplayValue(reading.outsideTempC, " °C")} · ${sensorDisplayValue(reading.outsideHumidityPct, "%")}`, detail: "Zunanja temperatura in vlaga", ok: hasSensorNumber(reading.outsideTempC) || hasSensorNumber(reading.outsideHumidityPct) },
+  { icon: Gauge, label: "Tlak BME280", value: sensorDisplayValue(reading.pressureHpa, " hPa"), detail: "Pripravljeno za vremenski kontekst", ok: hasSensorNumber(reading.pressureHpa) },
+  { icon: Mic, label: "Mikrofon", value: reading.microphoneStatus || (reading.soundHz ? `${reading.soundHz} Hz` : "Pripravljeno · ni podatka"), detail: "Pozneje za rojenje in zvok družine", ok: Boolean(reading.microphoneStatus || reading.soundHz) },
+  { icon: Camera, label: "Kamera", value: reading.cameraStatus || "Pripravljeno · ni podatka", detail: "Pozneje za fotografije in AI pregled", ok: Boolean(reading.cameraStatus) },
+  { icon: BatteryCharging, label: "Napajanje", value: `${sensorDisplayValue(reading.batteryPct ?? hive.batteryPct, "%")} · ${sensorDisplayValue(reading.solarV, " V solar")}`, detail: "Baterija, solar in stanje naprave", ok: hasSensorNumber(reading.batteryPct) || hasSensorNumber(hive.batteryPct) },
+  { icon: Radio, label: "LTE signal", value: sensorDisplayValue(reading.rssiDbm, " dBm"), detail: hive.deviceId || "Naprava še ni registrirana", ok: hasSensorNumber(reading.rssiDbm) },
+ ];
+}
+
+function lilyGoInterpretation(data, hive) {
+ const latest = latestReadingForHive(data, hive.id);
+ const previous = previousReadingForHive(data, hive.id);
+ if (!latest) return [{ tone: "warn", title: "LilyGO še ne pošilja meritev", text: "Aplikacija je pripravljena, vendar za ta panj še ni strežniškega odčitka naprave." }];
+ const notes = [];
+ const weightDrop = previous ? roundOne(toNumber(previous.weightKg) - toNumber(latest.weightKg)) : 0;
+ const feedKg = toNumber(latest.feedWeightKg ?? latest.foodKg ?? hive.foodKg, 0);
+ const insideTemp = toNumber(latest.insideTempC ?? latest.tempC ?? hive.temperatureC, 0);
+ const outsideTemp = toNumber(latest.outsideTempC, 0);
+ if (weightDrop >= 2.5) notes.push({ tone: "danger", title: "Nenaden padec teže panja", text: `Teža je padla za ${weightDrop} kg. Preveri rojenje, veter, premik panja ali napako tehtnice.` });
+ if (feedKg > 0 && feedKg < 3) notes.push({ tone: "danger", title: "Hrane v pitalniku je malo", text: "Pitalnik se približuje praznemu stanju. Preveri zalogo in načrt hranjenja." });
+ if (insideTemp > 0 && insideTemp < 20 && outsideTemp < 8) notes.push({ tone: "warn", title: "Hiter padec notranje temperature", text: "Pozimi lahko to pomeni odprt panj, prepih ali težavo z družino. Primerjaj z zadnjim obiskom." });
+ if (insideTemp >= 38) notes.push({ tone: "warn", title: "Visoka temperatura v panju", text: "Preveri zračenje, senco in ali je panj izpostavljen soncu." });
+ if (!latest.soundHz && !latest.microphoneStatus) notes.push({ tone: "plain", title: "Mikrofon še ne pošilja", text: "Prostor za napoved rojenja je pripravljen, vir zvoka pa še ni aktiven." });
+ if (!latest.cameraStatus) notes.push({ tone: "plain", title: "Kamera še ni aktivna", text: "Kasneje bo kamera lahko pomagala pri QR, fotografijah in AI pregledu." });
+ return notes.length ? notes : [{ tone: "ok", title: "Senzorji so v mirnem območju", text: "Ni posebnosti glede teže, hrane, temperature ali napajanja." }];
+}
+
 function getWeatherForHive(data, hive) {
  const latitude = Number(hive.latitude);
  const longitude = Number(hive.longitude);
@@ -1935,6 +1990,33 @@ function HiveDetail({ data, hiveId, setPage, startEdit, deleteHive, addNoteForHi
     <Metric icon={Activity} label="7 dni" value={`${hive.weeklyDeltaKg > 0 ? "+" : ""}${hive.weeklyDeltaKg} kg`} tone={hive.weeklyDeltaKg < 0 ? "warn" : "ok"} />
     <Metric icon={Utensils} label="Hrana" value={`${hive.foodDays} dni`} tone={hive.foodDays < 7 ? "warn" : "ok"} />
     <Metric icon={Thermometer} label="Klima" value={`${hive.temperatureC} °C`} />
+   </div>
+
+   <div className="card lilygo-card">
+    <div className="card-title">
+     <h2>LilyGO senzorski paket</h2>
+     <span>{latestReadingForHive(data, hive.id) ? "povezano" : "čaka odčitek"}</span>
+    </div>
+    <div className="lilygo-grid">
+     {lilyGoSensorRows(data, hive).map(({ icon: Icon, label, value, detail, ok }) => (
+      <div className={`lilygo-sensor-row ${ok ? "sensor-ready" : "sensor-waiting"}`} key={label}>
+       <Icon size={21} />
+       <div>
+        <strong>{label}</strong>
+        <span>{detail}</span>
+       </div>
+       <b>{value}</b>
+      </div>
+     ))}
+    </div>
+    <div className="lilygo-notes">
+     {lilyGoInterpretation(data, hive).map((note) => (
+      <div className={`sensor-note sensor-note-${note.tone}`} key={note.title}>
+       <strong>{note.title}</strong>
+       <span>{note.text}</span>
+      </div>
+     ))}
+    </div>
    </div>
 
    <div className="card">
@@ -5502,13 +5584,17 @@ function MorePage({ setPage }) {
 }
 
 function DebugPage({ data }) {
+ const feedReadings = data.readings.filter((reading) => hasSensorNumber(reading.feedWeightKg));
+ const averageBattery = data.readings.length
+  ? Math.round(data.readings.reduce((sum, reading) => sum + Number(reading.batteryPct || 0), 0) / data.readings.length)
+  : 0;
  return (
   <section>
    <PageHeader eyebrow="Podrobnosti" title="Senzorji in debug" subtitle="Samo za tehnični pregled. Prava strojna oprema še ni povezana." />
    <div className="metric-grid">
-    <Metric icon={Radio} label="Povezava" value="simulacija" />
-    <Metric icon={BatteryCharging} label="Povp. baterija" value="69%" />
-    <Metric icon={Waves} label="Zvok" value="212-286 Hz" />
+    <Metric icon={Radio} label="Meritve" value={data.readings.length} />
+    <Metric icon={BatteryCharging} label="Povp. baterija" value={`${averageBattery}%`} />
+    <Metric icon={Utensils} label="Pitalnik" value={feedReadings.length} />
     <Metric icon={ClipboardList} label="Zapisi" value={data.readings.length} />
    </div>
    <div className="card">
@@ -5523,7 +5609,7 @@ function DebugPage({ data }) {
         const battery = (reading.batteryPct ?? "-") + "%" + (reading.batteryV ? " " + reading.batteryV + " V" : "");
         return (
          <tr key={reading.hiveId + "-" + reading.time + "-" + index}>
-          <td>{getHiveName(data.hives, reading.hiveId)}</td><td>{reading.time}</td><td>{reading.weightKg}</td><td>{inside}</td><td>{outside}</td><td>{battery}</td><td>{reading.rssiDbm ?? "-"} dBm</td>
+          <td>{getHiveName(data.hives, reading.hiveId)}</td><td>{reading.time}</td><td>{reading.weightKg}</td><td>{reading.feedWeightKg ?? "-"}</td><td>{inside}</td><td>{outside}</td><td>{battery}</td><td>{reading.rssiDbm ?? "-"} dBm</td>
          </tr>
         );
        })}
@@ -5743,14 +5829,18 @@ function simulatorDefaults(hive) {
   longitude: hive.longitude || "",
   weightKg: hive.weightKg ?? 45,
   foodKg: hive.foodKg ?? 8,
+  feedWeightKg: hive.foodKg ?? 8,
   insideTempC: hive.temperatureC ?? 34.5,
   insideHumidityPct: hive.humidityPct ?? 60,
   outsideTempC: 22,
   outsideHumidityPct: 68,
+  pressureHpa: 1016,
   batteryPct: hive.batteryPct ?? 90,
   batteryV: 3.91,
   solarV: 5.7,
   rssiDbm: -73,
+  microphoneStatus: "",
+  cameraStatus: "",
  };
 }
 
@@ -5862,14 +5952,18 @@ const SIMULATOR_SUGGESTIONS = {
  longitude: "14.9955",
  weightKg: "50",
  foodKg: "20",
+ feedWeightKg: "20",
  insideTempC: "34.5",
  insideHumidityPct: "55",
  outsideTempC: "22",
  outsideHumidityPct: "65",
+ pressureHpa: "1016",
  batteryPct: "90",
  batteryV: "3.90",
  solarV: "5.5",
  rssiDbm: "-70",
+ microphoneStatus: "ni priklopljen",
+ cameraStatus: "ni priklopljena",
 };
 
 function AdminSimulatorPage({ session, setPage, selectedUserId, selectedHiveId, selectUser, selectHive }) {
@@ -5938,14 +6032,18 @@ function AdminSimulatorPage({ session, setPage, selectedUserId, selectedHiveId, 
     ...current[hiveId],
     weightKg: 50,
     foodKg: 20,
+    feedWeightKg: 20,
     insideTempC: 34.5,
     insideHumidityPct: 55,
     outsideTempC: 22,
     outsideHumidityPct: 65,
+    pressureHpa: 1016,
     batteryPct: 90,
     batteryV: 3.9,
     solarV: 5.5,
     rssiDbm: -70,
+    microphoneStatus: "ni priklopljen",
+    cameraStatus: "ni priklopljena",
    },
   }));
   setHiveMessages((current) => ({ ...current, [hiveId]: "Predlagane mirne vrednosti so vpisane. Za shranjevanje klikni Pošlji meritev zdaj." }));
@@ -6025,15 +6123,17 @@ function AdminSimulatorPage({ session, setPage, selectedUserId, selectedHiveId, 
         <label>Zemljepisna širina<input placeholder={SIMULATOR_SUGGESTIONS.latitude} type="number" step="0.0001" value={config.latitude} onChange={(event) => update(hive.id, "latitude", event.target.value)} /></label>
         <label>Zemljepisna dolžina<input placeholder={SIMULATOR_SUGGESTIONS.longitude} type="number" step="0.0001" value={config.longitude} onChange={(event) => update(hive.id, "longitude", event.target.value)} /></label>
         <label>Teža kg<input placeholder={SIMULATOR_SUGGESTIONS.weightKg} type="number" step="0.1" value={config.weightKg} onChange={(event) => update(hive.id, "weightKg", event.target.value)} /></label>
-        <label>Zaloga hrane kg<input placeholder={SIMULATOR_SUGGESTIONS.foodKg} type="number" step="0.1" value={config.foodKg} onChange={(event) => update(hive.id, "foodKg", event.target.value)} /></label>
+        <label>Zaloga hrane kg<input placeholder={SIMULATOR_SUGGESTIONS.foodKg} type="number" step="0.1" value={config.foodKg} onChange={(event) => { update(hive.id, "foodKg", event.target.value); update(hive.id, "feedWeightKg", event.target.value); }} /></label>
+        <label>Tehtnica pitalnika kg<input placeholder={SIMULATOR_SUGGESTIONS.feedWeightKg} type="number" step="0.1" value={config.feedWeightKg} onChange={(event) => { update(hive.id, "feedWeightKg", event.target.value); update(hive.id, "foodKg", event.target.value); }} /></label>
         <label>Ocenjeno dni hrane<input value={calculateHiveFood({ ...hive, foodKg: config.foodKg }).foodDays} readOnly /></label>
         <label>Temperatura notri °C<input placeholder={SIMULATOR_SUGGESTIONS.insideTempC} type="number" step="0.1" value={config.insideTempC} onChange={(event) => update(hive.id, "insideTempC", event.target.value)} /></label>
         <label>Vlaga notri %<input placeholder={SIMULATOR_SUGGESTIONS.insideHumidityPct} type="number" value={config.insideHumidityPct} onChange={(event) => update(hive.id, "insideHumidityPct", event.target.value)} /></label>
         <label>Temperatura zunaj °C<input placeholder={SIMULATOR_SUGGESTIONS.outsideTempC} type="number" step="0.1" value={config.outsideTempC} onChange={(event) => update(hive.id, "outsideTempC", event.target.value)} /></label>
         <label>Vlaga zunaj %<input placeholder={SIMULATOR_SUGGESTIONS.outsideHumidityPct} type="number" value={config.outsideHumidityPct} onChange={(event) => update(hive.id, "outsideHumidityPct", event.target.value)} /></label>
+        <label>Tlak BME280 hPa<input placeholder={SIMULATOR_SUGGESTIONS.pressureHpa} type="number" step="1" value={config.pressureHpa} onChange={(event) => update(hive.id, "pressureHpa", event.target.value)} /></label>
         <label>Baterija %<input placeholder={SIMULATOR_SUGGESTIONS.batteryPct} type="number" value={config.batteryPct} onChange={(event) => update(hive.id, "batteryPct", event.target.value)} /></label>
        </div>
-       <details className="details-card"><summary>Podrobnosti signala</summary><div className="form-grid"><label>Baterija V<input placeholder={SIMULATOR_SUGGESTIONS.batteryV} type="number" step="0.01" value={config.batteryV} onChange={(event) => update(hive.id, "batteryV", event.target.value)} /></label><label>Solar V<input placeholder={SIMULATOR_SUGGESTIONS.solarV} type="number" step="0.1" value={config.solarV} onChange={(event) => update(hive.id, "solarV", event.target.value)} /></label><label>RSSI dBm<input placeholder={SIMULATOR_SUGGESTIONS.rssiDbm} type="number" value={config.rssiDbm} onChange={(event) => update(hive.id, "rssiDbm", event.target.value)} /></label></div></details>
+       <details className="details-card"><summary>Podrobnosti signala</summary><div className="form-grid"><label>Baterija V<input placeholder={SIMULATOR_SUGGESTIONS.batteryV} type="number" step="0.01" value={config.batteryV} onChange={(event) => update(hive.id, "batteryV", event.target.value)} /></label><label>Solar V<input placeholder={SIMULATOR_SUGGESTIONS.solarV} type="number" step="0.1" value={config.solarV} onChange={(event) => update(hive.id, "solarV", event.target.value)} /></label><label>RSSI dBm<input placeholder={SIMULATOR_SUGGESTIONS.rssiDbm} type="number" value={config.rssiDbm} onChange={(event) => update(hive.id, "rssiDbm", event.target.value)} /></label><label>Mikrofon<input placeholder={SIMULATOR_SUGGESTIONS.microphoneStatus} value={config.microphoneStatus} onChange={(event) => update(hive.id, "microphoneStatus", event.target.value)} /></label><label>Kamera<input placeholder={SIMULATOR_SUGGESTIONS.cameraStatus} value={config.cameraStatus} onChange={(event) => update(hive.id, "cameraStatus", event.target.value)} /></label></div></details>
        <button className="primary-button full-button" type="button" disabled={Boolean(sendingHiveId)} onClick={() => sendReading(hive)}>
         {sendingHiveId === hive.id ? "Pošiljam ..." : "Pošlji meritev zdaj"}
        </button>

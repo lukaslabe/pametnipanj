@@ -604,6 +604,69 @@ button {
   line-height: 1.4;
 }
 
+.lilygo-card {
+  display: grid;
+  gap: 14px;
+}
+
+.lilygo-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.lilygo-sensor-row {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.65);
+}
+
+.lilygo-sensor-row svg {
+  color: var(--accent-strong);
+}
+
+.lilygo-sensor-row span,
+.sensor-note span {
+  display: block;
+  color: var(--muted);
+}
+
+.lilygo-sensor-row b {
+  white-space: nowrap;
+}
+
+.lilygo-sensor-row.sensor-waiting {
+  opacity: 0.72;
+}
+
+.lilygo-notes {
+  display: grid;
+  gap: 8px;
+}
+
+.sensor-note {
+  padding: 12px;
+  border-radius: 14px;
+  border-left: 4px solid var(--border-strong);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.sensor-note-ok {
+  border-left-color: var(--ok);
+}
+
+.sensor-note-warn {
+  border-left-color: var(--warn);
+}
+
+.sensor-note-danger {
+  border-left-color: var(--danger);
+}
+
 .simulator-card input::placeholder {
   color: #9a8f7d;
   opacity: 0.85;

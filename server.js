@@ -137,9 +137,15 @@ function validatePayload(payload) {
     "solarV",
     "rssiDbm",
   ];
+  const optionalNumericFields = ["feedWeightKg", "pressureHpa", "soundHz"];
 
   for (const field of numericFields) {
     if (!Number.isFinite(Number(payload[field]))) return `${field} must be numeric`;
+  }
+  for (const field of optionalNumericFields) {
+    if (payload[field] !== undefined && payload[field] !== null && payload[field] !== "" && !Number.isFinite(Number(payload[field]))) {
+      return `${field} must be numeric`;
+    }
   }
 
   if (payload.insideHumidityPct < 0 || payload.insideHumidityPct > 100) return "insideHumidityPct must be 0-100";
@@ -173,6 +179,11 @@ async function insertReading(hive, payload) {
     inside_humidity_pct: payload.insideHumidityPct,
     outside_temp_c: payload.outsideTempC,
     outside_humidity_pct: payload.outsideHumidityPct,
+    feed_weight_kg: payload.feedWeightKg === undefined ? null : Number(payload.feedWeightKg),
+    pressure_hpa: payload.pressureHpa === undefined ? null : Number(payload.pressureHpa),
+    sound_hz: payload.soundHz === undefined ? null : Math.round(Number(payload.soundHz)),
+    microphone_status: payload.microphoneStatus || "",
+    camera_status: payload.cameraStatus || "",
     battery_pct: payload.batteryPct,
     battery_v: payload.batteryV,
     solar_v: payload.solarV,
@@ -185,6 +196,11 @@ async function insertReading(hive, payload) {
 async function updateHiveFromReading(hive, payload, status, previousReading) {
   const previousWeight = previousReading ? Number(previousReading.weight_kg || 0) : Number(hive.weight_kg || 0);
   const weightDelta = roundOne(payload.weightKg - previousWeight);
+  const feedWeightKg = payload.feedWeightKg === undefined || payload.feedWeightKg === null || payload.feedWeightKg === "" ? null : Number(payload.feedWeightKg);
+  const foodPatch = feedWeightKg === null ? {} : {
+    food_liters: feedWeightKg,
+    food_days: Math.max(0, Math.round(feedWeightKg / 1.4)),
+  };
   await supabasePatch(`/rest/v1/hives?id=eq.${encodeURIComponent(hive.id)}`, {
     status: status.status,
     status_text: status.statusText,
@@ -195,23 +211,30 @@ async function updateHiveFromReading(hive, payload, status, previousReading) {
     battery_pct: Math.round(payload.batteryPct),
     signal: `${payload.rssiDbm} dBm`,
     last_seen: "pravkar",
+    ...foodPatch,
     updated_at: new Date().toISOString(),
   });
 }
 
 function calculateHiveStatus(payload, previousReading) {
   const weightDrop = previousReading ? Number(previousReading.weight_kg || 0) - payload.weightKg : 0;
+  const feedWeightKg = payload.feedWeightKg === undefined || payload.feedWeightKg === null || payload.feedWeightKg === "" ? null : Number(payload.feedWeightKg);
+  const previousInsideTemp = previousReading ? Number(previousReading.inside_temp_c || previousReading.temp_c || 0) : null;
+  const tempDrop = previousInsideTemp ? previousInsideTemp - Number(payload.insideTempC) : 0;
   if (
     payload.batteryPct <= 20 ||
+    (feedWeightKg !== null && feedWeightKg < 3) ||
     payload.insideTempC < 30 ||
     payload.insideTempC > 38 ||
     payload.insideHumidityPct >= 82 ||
-    weightDrop >= 2.5
+    weightDrop >= 2.5 ||
+    tempDrop >= 8
   ) {
     return { status: "danger", statusText: "Ukrepaj" };
   }
   if (
     payload.batteryPct <= 40 ||
+    (feedWeightKg !== null && feedWeightKg < 6) ||
     payload.rssiDbm <= -90 ||
     payload.solarV < 4.6 ||
     payload.insideTempC < 32 ||
@@ -228,6 +251,9 @@ function buildAlerts(hive, payload, previousReading, readingId) {
   const alerts = [];
   const previousWeight = previousReading ? Number(previousReading.weight_kg || 0) : null;
   const weightDrop = previousWeight === null ? 0 : previousWeight - payload.weightKg;
+  const feedWeightKg = payload.feedWeightKg === undefined || payload.feedWeightKg === null || payload.feedWeightKg === "" ? null : Number(payload.feedWeightKg);
+  const previousInsideTemp = previousReading ? Number(previousReading.inside_temp_c || previousReading.temp_c || 0) : null;
+  const tempDrop = previousInsideTemp ? previousInsideTemp - Number(payload.insideTempC) : 0;
 
   addAlertIf(alerts, payload.batteryPct <= 20, hive, readingId, "danger", "battery", "Nizka baterija", `Baterija je ${payload.batteryPct}%. Napolni ali preveri napajanje.`, `${payload.batteryPct}%`);
   addAlertIf(alerts, payload.batteryPct > 20 && payload.batteryPct <= 40, hive, readingId, "warn", "battery", "Baterija pada", `Baterija je ${payload.batteryPct}%.`, `${payload.batteryPct}%`);
@@ -239,6 +265,9 @@ function buildAlerts(hive, payload, previousReading, readingId) {
   addAlertIf(alerts, payload.insideHumidityPct >= 75 && payload.insideHumidityPct < 82, hive, readingId, "warn", "humidity", "Vlaga narasca", `Notranja vlaga je ${payload.insideHumidityPct}%.`, `${payload.insideHumidityPct}%`);
   addAlertIf(alerts, weightDrop >= 2.5, hive, readingId, "danger", "weight", "Teza hitro pada", `Panj je izgubil ${roundOne(weightDrop)} kg od zadnjega odcitka.`, `${roundOne(weightDrop)} kg`);
   addAlertIf(alerts, weightDrop >= 1 && weightDrop < 2.5, hive, readingId, "warn", "weight", "Preveri padec teze", `Panj je izgubil ${roundOne(weightDrop)} kg od zadnjega odcitka.`, `${roundOne(weightDrop)} kg`);
+  addAlertIf(alerts, feedWeightKg !== null && feedWeightKg < 3, hive, readingId, "danger", "food", "Hrane v pitalniku je malo", `Pitalnik kaže ${roundOne(feedWeightKg)} kg hrane.`, `${roundOne(feedWeightKg)} kg`);
+  addAlertIf(alerts, feedWeightKg !== null && feedWeightKg >= 3 && feedWeightKg < 6, hive, readingId, "warn", "food", "Preveri pitalnik", `Pitalnik kaže ${roundOne(feedWeightKg)} kg hrane.`, `${roundOne(feedWeightKg)} kg`);
+  addAlertIf(alerts, tempDrop >= 8, hive, readingId, "danger", "temperature", "Nenaden padec temperature", `Notranja temperatura je padla za ${roundOne(tempDrop)} °C od zadnjega odčitka. Pozimi preveri, ali je bil panj odprt.`, `${roundOne(tempDrop)} °C`);
 
   return alerts;
 }

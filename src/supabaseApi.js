@@ -101,7 +101,8 @@ export async function fetchAdminOverview(session) {
 
 export async function saveSimulatorReading(session, userId, hive, values) {
   const now = new Date().toISOString();
-  const foodKg = Number(values.foodKg);
+  const feedWeightKg = Number(values.feedWeightKg ?? values.foodKg);
+  const foodKg = Number(values.foodKg ?? feedWeightKg);
   const derived = deriveHiveStatus({ ...hive, ...values, foodKg });
   const foodDays = derived.foodDays;
   const batteryPct = Number(values.batteryPct);
@@ -130,6 +131,10 @@ export async function saveSimulatorReading(session, userId, hive, values) {
     inside_humidity_pct: Number(values.insideHumidityPct),
     outside_temp_c: Number(values.outsideTempC),
     outside_humidity_pct: Number(values.outsideHumidityPct),
+    feed_weight_kg: feedWeightKg,
+    pressure_hpa: Number(values.pressureHpa),
+    microphone_status: values.microphoneStatus || "",
+    camera_status: values.cameraStatus || "",
     battery_pct: Number(values.batteryPct),
     battery_v: Number(values.batteryV),
     solar_v: Number(values.solarV),
@@ -182,7 +187,15 @@ export async function saveSimulatorReading(session, userId, hive, values) {
         battery_pct: batteryPct,
         firmware_version: "simulator-1.0",
         last_seen: now,
-        metadata: { source: "admin_simulator", rssiDbm: Number(values.rssiDbm), solarV: Number(values.solarV) },
+        metadata: {
+          source: "admin_simulator",
+          rssiDbm: Number(values.rssiDbm),
+          solarV: Number(values.solarV),
+          feedWeightKg,
+          pressureHpa: Number(values.pressureHpa),
+          microphoneStatus: values.microphoneStatus || "",
+          cameraStatus: values.cameraStatus || "",
+        },
         created_at: now,
         updated_at: now,
       },
@@ -461,9 +474,13 @@ function fromReadingRow(row) {
     insideTempC: Number(row.inside_temp_c ?? row.temp_c ?? 0), insideHumidityPct: Number(row.inside_humidity_pct ?? row.humidity_pct ?? 0),
     outsideTempC: row.outside_temp_c === null ? null : Number(row.outside_temp_c || 0),
     outsideHumidityPct: row.outside_humidity_pct === null ? null : Number(row.outside_humidity_pct || 0),
+    feedWeightKg: row.feed_weight_kg === null || row.feed_weight_kg === undefined ? null : Number(row.feed_weight_kg || 0),
+    pressureHpa: row.pressure_hpa === null || row.pressure_hpa === undefined ? null : Number(row.pressure_hpa || 0),
+    microphoneStatus: row.microphone_status || "",
+    cameraStatus: row.camera_status || "",
     soundHz: Number(row.sound_hz || 0), batteryPct: Number(row.battery_pct || 0),
     batteryV: row.battery_v === null ? null : Number(row.battery_v || 0), solarV: row.solar_v === null ? null : Number(row.solar_v || 0),
-    rssiDbm: row.rssi_dbm === null ? null : Number(row.rssi_dbm || 0), createdAt: row.created_at,
+    rssiDbm: row.rssi_dbm === null ? null : Number(row.rssi_dbm || 0), recordedAt: row.recorded_at, createdAt: row.created_at,
   };
 }
 
@@ -473,6 +490,8 @@ function toReadingRow(item, userId) {
     temp_c: item.tempC, humidity_pct: item.humidityPct, inside_temp_c: item.insideTempC ?? item.tempC,
     inside_humidity_pct: item.insideHumidityPct ?? item.humidityPct, outside_temp_c: item.outsideTempC ?? null,
     outside_humidity_pct: item.outsideHumidityPct ?? null, sound_hz: item.soundHz, battery_pct: item.batteryPct,
+    feed_weight_kg: item.feedWeightKg ?? null, pressure_hpa: item.pressureHpa ?? null,
+    microphone_status: item.microphoneStatus || null, camera_status: item.cameraStatus || null,
     battery_v: item.batteryV ?? null, solar_v: item.solarV ?? null, rssi_dbm: item.rssiDbm ?? null,
     created_at: item.createdAt || new Date().toISOString(),
   };
